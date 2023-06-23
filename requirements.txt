@@ -10,3 +10,4 @@ git+https://github.com/joshcarty/google-searchconsole
 google-auth
 google-api-python-client
 google-auth-oauthlib
+python-dotenv
