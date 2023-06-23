@@ -138,12 +138,18 @@ def get_ngram_frequency(texts: List[str], ngram_range: tuple = (1, 6), min_df: i
 def clean_gsc_dataframe(df: pd.DataFrame, brand: str = None, limit_queries: int = 5) -> pd.DataFrame:
     """Clean up the GSC dataframe."""
 
-    df['original_query'] = df['query']
-
     df['query'] = df['query'].str.lower()
 
     # Remove non-english characters from query
     df['query'] = df['query'].str.replace(r'[^a-zA-Z0-9\s]', '')
+
+    # Trim whitespace from query
+    df['query'] = df['query'].str.strip()
+
+    # Remove rows where query is empty
+    df = df[df['query'] != '']
+
+    df_return = df.copy()
 
     # Rename impressions to search_volume
     df = df.rename(columns={"impressions": "search_volume"})
@@ -155,11 +161,6 @@ def clean_gsc_dataframe(df: pd.DataFrame, brand: str = None, limit_queries: int 
 
         df["query"] = df["query"].apply(lambda x: ' '.join([word for word in x.split(' ') if word.lower() not in (brand_terms)]))
 
-    # Trim whitespace from query
-    df['query'] = df['query'].str.strip()
-
-    # Remove rows where query is empty
-    df = df[df['query'] != '']
 
     # Sort by clicks and impressions descending
     df = df.sort_values(by=['clicks', 'search_volume'], ascending=False)
@@ -168,7 +169,7 @@ def clean_gsc_dataframe(df: pd.DataFrame, brand: str = None, limit_queries: int 
     if limit_queries:
         df = df.groupby("page").head(limit_queries)
 
-    return df
+    return df_return
 
 
 
