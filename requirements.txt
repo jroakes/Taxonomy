@@ -1,0 +1,12 @@
+sentence_transformers
+loguru
+google-generativeai
+openai
+scikit-learn
+nltk
+kneed
+pandas
+git+https://github.com/joshcarty/google-searchconsole
+google-auth
+google-api-python-client
+google-auth-oauthlib
