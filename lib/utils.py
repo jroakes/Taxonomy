@@ -37,9 +37,10 @@ def setup_logging():
     logger.disable("google.auth.transport.requests")
 
 
-def create_tuples(l1: List[str], l2: List[str]) -> List[Tuple[str, str]]:
+def create_tuples(l1: List[str], l2: List[str]) -> List[List[str]]:
     """Create tuples from two lists."""
-    return [(item1, item2) for item1, item2 in product(l1, l2) if item1 != item2]
+    return [[item1, item2] for item1, item2 in product(l1, l2) if item1 != item2]
+
 
 
 def process_result(result: str) -> dict:

@@ -46,8 +46,8 @@ def get_structure(text: str) -> List[str]:
 
 
 
-def filter_knee(df: pd.DataFrame, S: int = 100) -> pd.DataFrame:   
-    kneedle = KneeLocator(range(1, len(df) + 1), df["score"], curve="convex", direction="decreasing", S=S)
+def filter_knee(df: pd.DataFrame, col_name: str = "score", S: int = 100) -> pd.DataFrame:   
+    kneedle = KneeLocator(range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing", S=S)
     df_knee = df.iloc[:kneedle.knee]
     return df_knee
 
@@ -168,14 +168,3 @@ def clean_gsc_dataframe(df: pd.DataFrame, brand: str = None, limit_queries: int 
         df = df.groupby("page").head(limit_queries)
 
     return df
-
-
-
-
-
-    
-
-
-
-
-

@@ -1,13 +1,13 @@
 
-from typing import Union
+from typing import Union, List
+from sentence_transformers import CrossEncoder
 import pandas as pd
 from lib.searchconsole import load_gsc_account_data, load_available_gsc_accounts
 from lib.nlp import clean_gsc_dataframe, get_ngram_frequency, merge_ngrams, filter_knee, get_structure
 from lib.api import get_openai_response_chat, get_palm_response, PROMPT_TEMPLATE
-
+from lib.utils import create_tuples
 from loguru import logger
-import requests
-
+import settings
 
 
 
@@ -80,12 +80,17 @@ def get_data(data: Union[str,pd.DataFrame],
 
 def score_and_filter_df(df: pd.DataFrame,
                         ngram_range: tuple = (1, 6),
+                        S: int = 100,
                         min_df: int = 2,) -> pd.DataFrame:
     """Score and filter dataframe."""
 
     df_ngram = get_ngram_frequency(df['query'].tolist(), ngram_range=ngram_range, min_df=min_df)
+    logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
+    logger.info(df_ngram.head())
 
     df_ngram = merge_ngrams(df_ngram)
+    logger.info(f"Merged Ngrams. Dataframe shape: {df_ngram.shape}")
+    logger.info(df_ngram.head())
 
     df_ngram = df_ngram.rename(columns={"feature": "query"})
 
@@ -112,6 +117,10 @@ def score_and_filter_df(df: pd.DataFrame,
 
     df_ngram = df_ngram.reset_index(drop=True)
 
+    df_ngram = filter_knee(df_ngram, col_name="score", S=S)
+    logger.info(f"Filtered Knee (sensitivity={S}). Dataframe shape: {df_ngram.shape}")
+    logger.info(df_ngram.head())
+
     return df_ngram
 
 
@@ -125,6 +134,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
                     days: int = 30,
                     ngram_range: tuple = (1, 6),
                     min_df: int = 2,
+                    S: int = 100,
                     brand: str = None,
                     limit_queries: int = 5):
     """Kickoff function to create taxonomy from GSC data."""
@@ -134,11 +144,11 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
     logger.info(f"Got Data. Dataframe shape: {df.shape}")
 
     # Get ngram frequency
-    df_ngram = score_and_filter_df(df, ngram_range, min_df)
+    df_ngram = score_and_filter_df(df, ngram_range, S, min_df)
     logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
 
     # Get samples
-    samples = df_ngram["query"].tolist()[:1000]
+    samples = df_ngram["query"].tolist()[:900]
     logger.info(f"Got samples. Number of samples: {len(samples)}")
 
     prompt = PROMPT_TEMPLATE.format(samples=samples, brand=brand)
@@ -168,9 +178,39 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
 
 
+def add_categories(taxonomy:List[str], df: pd.DataFrame, brand: Union[str, None] = None) -> pd.DataFrame:
+    """Add categories to dataframe."""
 
+    queries = list(set(df['original_query'].tolist()))
+    if brand:
+        taxonomies = [brand] + taxonomy.copy()
+    else:
+        taxonomies = taxonomy.copy()
+    
+    # Get last category of taxonomy
+    # TODO: Ideally we want to match to children and roll-up to parents.  This will match to parents.
+    categories = [t.split(" > ")[-1].strip() for t in taxonomies]
 
+    model = CrossEncoder(settings.CROSSENCODER_MODEL_NAME, max_length=128)
 
+    compare_pairs = create_tuples(categories, queries)
 
+    scores = model.predict(compare_pairs, batch_size=512)
 
+    df_category = pd.DataFrame({"scores": scores,
+                                "categories": [s[0] for s in compare_pairs],
+                                "queries": [s[1] for s in compare_pairs]})
 
+    df_category.sort_values(by="scores", ascending=False, inplace=True)
+
+    # This assigns the most similar category to each query
+    df_category = df_category.groupby(["queries"], as_index=False).agg({'categories': 'first'})
+
+    df_category.columns = ['original_query', 'category']
+
+    df_out = df.merge(df_category, on="original_query", how="left")
+
+    # Lookup and add back original taxonomy
+    df_out['taxonomy'] = df_out['category'].map(lambda x: taxonomies[categories.index(x)])
+
+    return df_out
