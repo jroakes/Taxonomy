@@ -40,8 +40,13 @@ def get_data(data: Union[str,pd.DataFrame],
         df = clean_gsc_dataframe(df, brand, limit_queries)
 
 
-    elif isinstance(data, pd.DataFrame):
-        df = data
+
+    elif isinstance(data, pd.DataFrame) or isinstance(data, str) and (".csv" in data):
+
+        if isinstance(data, str) and (".csv" in data):
+            df = pd.read_csv(data)
+        else:
+            df = data
 
         if text_column is None:
             text_column = input("What is the name of the column with the queries? ")
@@ -56,7 +61,9 @@ def get_data(data: Union[str,pd.DataFrame],
         # Remove other columns
         df = df[["query", "search_volume"]]
 
-        # Remove non-english characters from query
+        df['original_query'] = df['query']
+
+        # Remove non-english characters from query using regex: [^a-zA-Z0-9\s]
         df["query"] = df["query"].str.replace(r'[^a-zA-Z0-9\s]', '')
 
         # Trim whitespace from query
@@ -72,7 +79,7 @@ def get_data(data: Union[str,pd.DataFrame],
         df = df[df["search_volume"].notna()]
 
     else:
-        raise ValueError("Data must be a URL string or pandas dataframe.")
+        raise ValueError("Data must be a GSC Property, CSV Filename, or pandas dataframe.")
 
 
     return df
@@ -86,11 +93,9 @@ def score_and_filter_df(df: pd.DataFrame,
 
     df_ngram = get_ngram_frequency(df['query'].tolist(), ngram_range=ngram_range, min_df=min_df)
     logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
-    logger.info(df_ngram.head())
 
     df_ngram = merge_ngrams(df_ngram)
     logger.info(f"Merged Ngrams. Dataframe shape: {df_ngram.shape}")
-    logger.info(df_ngram.head())
 
     df_ngram = df_ngram.rename(columns={"feature": "query"})
 
@@ -119,7 +124,6 @@ def score_and_filter_df(df: pd.DataFrame,
 
     df_ngram = filter_knee(df_ngram, col_name="score", S=S)
     logger.info(f"Filtered Knee (sensitivity={S}). Dataframe shape: {df_ngram.shape}")
-    logger.info(df_ngram.head())
 
     return df_ngram
 

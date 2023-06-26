@@ -1,5 +1,7 @@
 # Auto Taxonomy Creation
 
+
+
 ## Example
 ```
 from main import create_taxonomy
@@ -17,24 +19,42 @@ taxonomy, df = create_taxonomy("https://www.domain.com/",
 print(taxonomy)
 ```
 
+### Parameters
+* `text_column`: The column with text if given a CSV or Pandas DataFrame
+* `search_volume_column`: The column with search volumne if given a CSV or Pandas DataFrame
+* `platform`: LLM Platform.  Uses OpenAI and Palm2
+* `days`: If providing a GSC property, pulls this many days of data.  If not, does nothing.
+* `ngram_range`: Breaks queries into these sets of ngrams.  Shouldn't need to change.
+* `min_df`: Limits ngrams to this frequency of being found in the queries.  Can adjust larger with larger amounts of data.
+* `brand`: If provided, will pull the brand terms from queries.  Helpful for sites with majority brand queries.
+* `limit_queries`: For GSC only, this limits the number of queries per URL.  Good to keep indvidual posts from dominating queries.
+
+
 ## Cross Encoder
 
 ```
-from sentence_transformers import CrossEncoder
-from itertools import product
-from typing import List, Tuple
-import settings
+from main import create_taxonomy, add_categories
 
-def create_tuples(l1: List[str], l2: List[str]) -> List[Tuple[str, str]]:
-    return [(item1, item2) for item1, item2 in product(l1, l2) if item1 != item2]
+filename = "data.csv"
+brand = "Brand"
 
-queries = list(set(df['original_query'].tolist()))
-categories = taxonomy.copy()
+taxonomy, df = create_taxonomy(filename,
+                    text_column = "keyword",
+                    search_volume_column = "search_volume",
+                    platform = "openai", # "palm" or "openai"
+                    days = 30,
+                    S=200,
+                    ngram_range = (1, 5),
+                    min_df = 1,
+                    brand = None,
+                    limit_queries = 1)
 
-model = CrossEncoder(settings.CROSSENCODER_MODEL_NAME, max_length=128)
 
-sentence_pairs = create_tuples(categories, queries)
+# Cross Encodes queries back to categories
+df = add_categories(taxonomy, df, brand) 
 
-scores = model.predict(sentence_pairs, batch_size=512)
+df.to_csv("cais_taxonomy.csv", index=False)
+
+df.head()
 
 ```

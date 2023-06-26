@@ -163,8 +163,8 @@ cython_debug/
 # CSVs
 *.csv
 
-# Jupyter
-*.ipynb
+# Jupyter Notebook
+*.bak
 
 #JSON
 *.json
