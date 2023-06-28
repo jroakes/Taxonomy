@@ -11,6 +11,7 @@ taxonomy, df = create_taxonomy("https://www.domain.com/",
                     search_volume_column = None,
                     platform = "openai", # "palm" or "openai"
                     days = 30,
+                    S=200,
                     ngram_range = (1, 6),
                     min_df = 2,
                     brand = "Brand Name",
@@ -24,6 +25,7 @@ print(taxonomy)
 * `search_volume_column`: The column with search volumne if given a CSV or Pandas DataFrame
 * `platform`: LLM Platform.  Uses OpenAI and Palm2
 * `days`: If providing a GSC property, pulls this many days of data.  If not, does nothing.
+* `S`: The sensitivity of the elbow finding.  Larger numbers (e.g. 500) return more top ngrams.
 * `ngram_range`: Breaks queries into these sets of ngrams.  Shouldn't need to change.
 * `min_df`: Limits ngrams to this frequency of being found in the queries.  Can adjust larger with larger amounts of data.
 * `brand`: If provided, will pull the brand terms from queries.  Helpful for sites with majority brand queries.

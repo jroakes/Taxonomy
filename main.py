@@ -138,9 +138,10 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
                     days: int = 30,
                     ngram_range: tuple = (1, 6),
                     min_df: int = 2,
-                    S: int = 100,
+                    S: int = 500,
                     brand: str = None,
-                    limit_queries: int = 5):
+                    limit_queries: int = 5,
+                    debug_responses: bool = False):
     """Kickoff function to create taxonomy from GSC data."""
 
     # Get data
@@ -170,7 +171,8 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
         logger.error("No response from API.")
         return None
     
-    logger.info(response)
+    if debug_responses:
+        logger.info(response)
     
     # Get structure
     logger.info("Getting structure.")
@@ -178,7 +180,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
     logger.info("Done.")
 
-    return structure, df
+    return structure, df, samples
 
 
 
@@ -193,7 +195,7 @@ def add_categories(taxonomy:List[str], df: pd.DataFrame, brand: Union[str, None]
     
     # Get last category of taxonomy
     # TODO: Ideally we want to match to children and roll-up to parents.  This will match to parents.
-    categories = [t.split(" > ")[-1].strip() for t in taxonomies]
+    categories = [" ".join(list(set(t.split(" > ")))) for t in taxonomies]
 
     model = CrossEncoder(settings.CROSSENCODER_MODEL_NAME, max_length=128)
 
@@ -208,13 +210,15 @@ def add_categories(taxonomy:List[str], df: pd.DataFrame, brand: Union[str, None]
     df_category.sort_values(by="scores", ascending=False, inplace=True)
 
     # This assigns the most similar category to each query
-    df_category = df_category.groupby(["queries"], as_index=False).agg({'categories': 'first'})
+    df_category = df_category.groupby(["queries"], as_index=False).agg({'categories': 'first', 'scores': 'first'})
 
-    df_category.columns = ['original_query', 'category']
+    df_category.columns = ['original_query', 'taxonomy_category', 'similiary_score']
 
     df_out = df.merge(df_category, on="original_query", how="left")
 
     # Lookup and add back original taxonomy
-    df_out['taxonomy'] = df_out['category'].map(lambda x: taxonomies[categories.index(x)])
+    df_out['taxonomy'] = df_out['taxonomy_category'].map(lambda x: taxonomies[categories.index(x)])
 
     return df_out
+
+

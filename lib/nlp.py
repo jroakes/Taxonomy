@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer
 from sentence_transformers import CrossEncoder
@@ -168,3 +168,41 @@ def clean_gsc_dataframe(df: pd.DataFrame, brand: str = None, limit_queries: int 
         df = df.groupby("page").head(limit_queries)
 
     return df
+
+
+
+def convert_language(name: str) -> Union[str, None]:
+
+    fn = "https://raw.githubusercontent.com/datasets/language-codes/master/data/language-codes.csv"
+    df = pd.read_csv(fn)
+    df.columns = ['code', 'name']
+    df['name'] = df['name'].map(lambda x: x.split(";")[0].strip())
+    df['name'] = df['name'].str.lower().str.strip()
+
+    # Get language code
+    if name.lower() in df['name'].tolist():
+        return df[df['name'] == name.lower()]['code'].tolist()[0]
+    
+    return None
+
+
+
+def convert_country(name: str) -> Union[str, None]:
+
+    fn = "https://raw.githubusercontent.com/lukes/ISO-3166-Countries-with-Regional-Codes/master/all/all.csv"
+    df = pd.read_csv(fn)[['name', 'alpha-2']]
+    df.columns = ['name', 'code']
+    # remove parenthesis
+    df['name'] = df['name'].map(lambda x: x.split("(")[0].strip())
+    df['name'] = df['name'].str.lower().str.strip()
+
+    # Match name if in name series
+    if name.lower() in df['name'].tolist():
+        return df[df['name'] == name.lower()]['code'].tolist()[0]
+    
+    # Match name if part of strings in name series
+    if df[df['name'].str.contains(name.lower())].shape[0] > 0:
+        return df[df['name'].str.contains(name.lower())]['code'].tolist()[0]
+    
+    
+    return None
