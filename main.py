@@ -140,7 +140,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
                     text_column: str = None,
                     search_volume_column: str = None,
                     taxonomy_model: str = "palm", # "palm" or "openai"
-                    cluster_description_model: Union[str, None] = None,
+                    use_llm_cluster_descriptions: bool = False,
                     cluster_embeddings_model: Union[str, None] = None,
                     days: int = 30,
                     ngram_range: tuple = (1, 6),
@@ -176,7 +176,8 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
     logger.info(f"Got Data. Dataframe shape: {df.shape}")
 
 
-    if cluster_description_model:
+    if use_llm_cluster_descriptions:
+
         logger.info("Using LLM Descriptions.")
         # Get ngram frequency
         df_ngram = score_and_filter_df(df, ngram_range=ngram_range, filter_knee=False, min_df=min_df)
@@ -189,7 +190,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
                                         min_samples = 3,
                                         reduction_dims  = 5,
                                         cluster_model = "agglomerative",
-                                        cluster_description_model = platform
+                                        use_llm_descriptions = True
                                     )
         
         _, text_labels = cluster_model.fit(queries)
@@ -224,7 +225,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
         logger.info("Using OpenAI API.")
         response = get_openai_response_chat(prompt)
     else:
-        raise ValueError("Platform must be 'palm' or 'openai'.")
+        raise NotImplementedError("Platform must be 'palm' or 'openai'.")
     
     if not response:
         logger.error("No response from API.")

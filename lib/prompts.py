@@ -165,7 +165,13 @@ Begin!
 """
 
 
-PROMPT_TEMPLATE_CLUSTER = """As an expert at reviewing search queries, we need your help to understand what topics are being searched for. You will be given a list of search queries and must distill them into a clear and concise description of the topics.
+PROMPT_TEMPLATE_CLUSTER = """As an expert at reviewing search queries, we need your help to understand what topics are being searched for. 
+You will be given a list of search queries and must distill them into a clear and descriptive synopsis of the topics.
+
+A good output description would be:
+Users looking for mens shoes in various colors and sizes
+
+Please provide a sentence (or two) describing what the users are looking for.
 
 Queries:
 {samples}

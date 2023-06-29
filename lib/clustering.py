@@ -41,7 +41,7 @@ class ClusterTopics:
         min_samples: Union[int, bool] = None,
         reduction_dims: Union[int, float] = 0,
         cluster_model: str = "hdbscan",
-        cluster_description_model: Union[str, None] = None,
+        use_llm_descriptions: bool = False,
         cluster_categories: List[str] = None,
         use_elbow: bool = True,
         keep_outliers: bool = False,
@@ -75,9 +75,9 @@ class ClusterTopics:
         """Converts text to embeddings"""
 
         if self.embedding_model == "openai":
-            return get_openai_embeddings(sentences)
+            return get_openai_embeddings(sentences, n_jobs = self.n_jobs)
         elif self.embedding_model == "palm":
-            return get_palm_embeddings(sentences)
+            return get_palm_embeddings(sentences, n_jobs = self.n_jobs)
         
         else:
             # Only do batching and progress if many embeddings
@@ -272,20 +272,12 @@ class ClusterTopics:
         prompt = PROMPT_TEMPLATE_CLUSTER.format(samples=samples)
 
 
-        if self.cluster_description_model == "palm":
-            explanation = get_palm_response(prompt)
-
-        elif self.cluster_description_model in ["gpt-4", "gpt-3.5-turbo"]:
-            explanation = get_openai_response_chat(prompt, 
-                                                    model = self.cluster_description_model,
-                                                    system_message="You are an expert at understanind the intent of Google searches.")
-
-        else:
-            raise NotImplementedError("Only `palm`, `gpt-4`, and `gpt-3.5-turbo` are implemented.")
+        explanation = get_openai_response_chat(prompt, 
+                                               model = settings.CLUSTER_DESCRIPTION_MODEL,
+                                               system_message="You are an expert at understanind the intent of Google searches.")
         
 
         return explanation
-
 
 
     def get_text_label_mapping_llm(self) -> dict:
@@ -310,7 +302,7 @@ class ClusterTopics:
             if len(samples) > 200:
                 samples = np.random.choice(samples, size=200, replace=False)
 
-            sample_queries[label] = explanation
+            sample_queries[label] = samples
         
         # Use multi-threading to get explanations and add to mapping at correct label key
         with concurrent.futures.ThreadPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
@@ -410,7 +402,7 @@ class ClusterTopics:
 
         logger.info("Finding names for cluster labels.")
 
-        if self.cluster_description_model is not None:
+        if self.use_llm_descriptions:
             label_mapping = self.get_text_label_mapping_llm()
         else:
             label_mapping = self.get_text_label_mapping()
