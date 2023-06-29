@@ -139,8 +139,9 @@ def score_and_filter_df(df: pd.DataFrame,
 def create_taxonomy(data: Union[str, pd.DataFrame],
                     text_column: str = None,
                     search_volume_column: str = None,
-                    platform: str = "palm", # "palm" or "openai"
-                    use_llm_descriptions: bool = False,
+                    taxonomy_model: str = "palm", # "palm" or "openai"
+                    cluster_description_model: Union[str, None] = None,
+                    cluster_embeddings_model: Union[str, None] = None,
                     days: int = 30,
                     ngram_range: tuple = (1, 6),
                     min_df: int = 2,
@@ -148,14 +149,34 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
                     brand: str = None,
                     limit_queries: int = 5,
                     debug_responses: bool = False):
-    """Kickoff function to create taxonomy from GSC data."""
+    """Kickoff function to create taxonomy from GSC data.
+
+    Args:
+        data (Union[str, pd.DataFrame]): GSC Property, CSV Filename, or pandas dataframe.
+        text_column (str, optional): Name of the column with the queries. Defaults to None.
+        search_volume_column (str, optional): Name of the column with the search volume. Defaults to None.
+        taxonomy_model (str, optional): Name of the taxonomy model. Defaults to "palm".
+        cluster_description_model (Union[str, None], optional): Name of the cluster description model. Defaults to None.
+        cluster_embeddings_model (Union[str, None], optional): Name of the cluster embeddings model. Defaults to None.
+        days (int, optional): Number of days to get data from. Defaults to 30.
+        ngram_range (tuple, optional): Ngram range to use for scoring. Defaults to (1, 6).
+        min_df (int, optional): Minimum document frequency to use for scoring. Defaults to 2.
+        S (int, optional): Sensitivity to use for filtering knee. Defaults to 500.
+        brand (str, optional): Brand name to use for filtering. Defaults to None.
+        limit_queries (int, optional): Number of queries to use for clustering. Defaults to 5.
+        debug_responses (bool, optional): Whether to print debug responses. Defaults to False.
+
+    Returns:
+        structure, df, samples
+        Tuple[List[str], pd.DataFrame, List[str]]: Taxonomy list, original dataframe, and sample queries.
+    """
 
     # Get data
     df = get_data(data, text_column, search_volume_column, days, brand, limit_queries)
     logger.info(f"Got Data. Dataframe shape: {df.shape}")
 
 
-    if use_llm_descriptions:
+    if cluster_description_model:
         logger.info("Using LLM Descriptions.")
         # Get ngram frequency
         df_ngram = score_and_filter_df(df, ngram_range=ngram_range, filter_knee=False, min_df=min_df)
@@ -163,7 +184,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
         queries = list(set(df_ngram["query"].tolist()))
 
         cluster_model = ClusterTopics(
-                                        embedding_model = platform,
+                                        embedding_model = cluster_embeddings_model,
                                         min_cluster_size = 5,
                                         min_samples = 3,
                                         reduction_dims  = 5,
@@ -171,7 +192,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
                                         cluster_description_model = platform
                                     )
         
-        labels, text_labels = cluster_model.fit(queries)
+        _, text_labels = cluster_model.fit(queries)
         label_lookup = {query: label for query, label in zip(queries, text_labels)}
 
         def lookup_label(query):
@@ -196,10 +217,10 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
 
     # Get response    
-    if platform == "palm":
+    if taxonomy_model == "palm":
         logger.info("Using Palm API.")
         response = get_palm_response(prompt)
-    elif platform == "openai":
+    elif taxonomy_model == "openai":
         logger.info("Using OpenAI API.")
         response = get_openai_response_chat(prompt)
     else:

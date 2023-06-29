@@ -7,6 +7,7 @@ import os
 import math
 from tqdm.auto import tqdm
 from typing import List, Union
+import concurrent.futures
 from sentence_transformers import SentenceTransformer
 import torch
 
@@ -35,7 +36,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 class ClusterTopics:
     def __init__(
         self,
-        embedding_model: str = "all-mpnet-base-v2",
+        embedding_model: Union[str, None] = "all-mpnet-base-v2",
         min_cluster_size: int = 10,
         min_samples: Union[int, bool] = None,
         reduction_dims: Union[int, float] = 0,
@@ -46,7 +47,7 @@ class ClusterTopics:
         keep_outliers: bool = False,
         n_jobs: int = 6,
     ):
-        self.embedding_model = embedding_model
+        self.embedding_model = embedding_model or "all-mpnet-base-v2"
         self.min_cluster_size = min_cluster_size
         self.min_samples = min_samples or round(math.sqrt(self.min_cluster_size))
         self.reduction_dims = reduction_dims
@@ -261,6 +262,32 @@ class ClusterTopics:
         return mapping
     
 
+
+    def get_llm_description(self, samples: List[str]) -> str:
+        """Gets the description of a cluster using LLM"""
+
+        samples = "\n".join(samples)
+
+        # Get prompt
+        prompt = PROMPT_TEMPLATE_CLUSTER.format(samples=samples)
+
+
+        if self.cluster_description_model == "palm":
+            explanation = get_palm_response(prompt)
+
+        elif self.cluster_description_model in ["gpt-4", "gpt-3.5-turbo"]:
+            explanation = get_openai_response_chat(prompt, 
+                                                    model = self.cluster_description_model,
+                                                    system_message="You are an expert at understanind the intent of Google searches.")
+
+        else:
+            raise NotImplementedError("Only `palm`, `gpt-4`, and `gpt-3.5-turbo` are implemented.")
+        
+
+        return explanation
+
+
+
     def get_text_label_mapping_llm(self) -> dict:
         """Gets explanations for each cluster using Palm or OpenAI LLM"""
 
@@ -268,7 +295,10 @@ class ClusterTopics:
 
         mapping = {-1: "<outliers>"}
 
-        for label in tqdm(labels, desc="Finding labels", total=len(labels)):
+        sample_queries = {}
+
+        # Add sample queries for each cluster
+        for label in labels:
 
             if label == -1:
                 continue
@@ -280,19 +310,17 @@ class ClusterTopics:
             if len(samples) > 200:
                 samples = np.random.choice(samples, size=200, replace=False)
 
-            # Get prompt
-            prompt = PROMPT_TEMPLATE_CLUSTER.format(samples=samples)
+            sample_queries[label] = explanation
+        
+        # Use multi-threading to get explanations and add to mapping at correct label key
+        with concurrent.futures.ThreadPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
 
+            futures = {executor.submit(self.get_llm_description, samples): label for label, samples in sample_queries.items()}
 
-            if self.cluster_description_model == "palm":
-                explanation = get_palm_response(prompt)
-            elif self.cluster_description_model == "openai":
-                explanation = get_openai_response_chat(prompt, system_message="You are an expert at understanind the intent of Google searches.")
-            else:
-                raise NotImplementedError("Only `palm` and `openai` are implemented.")
-
-
-            mapping[label] = explanation
+            for future in tqdm(concurrent.futures.as_completed(futures), desc="Getting LLM explanations", total=len(futures)):
+                label = futures[future]
+                explanation = future.result()
+                mapping[label] = explanation
 
 
         return mapping
