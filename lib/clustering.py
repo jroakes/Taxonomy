@@ -81,6 +81,8 @@ class ClusterTopics:
         
         else:
             # Only do batching and progress if many embeddings
+            logger.info('Using local embeddings')
+
             if len(sentences) > 64:
                 embeddings = SentenceTransformer(self.embedding_model).encode(
                     sentences, show_progress_bar=True, batch_size=64
@@ -274,7 +276,7 @@ class ClusterTopics:
 
         explanation = get_openai_response_chat(prompt, 
                                                model = settings.CLUSTER_DESCRIPTION_MODEL,
-                                               system_message="You are an expert at understanind the intent of Google searches.")
+                                               system_message="You are an expert at understanding the intent of Google searches.")
         
 
         return explanation

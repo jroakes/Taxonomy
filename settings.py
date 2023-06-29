@@ -10,7 +10,7 @@ from loguru import logger
 load_dotenv()
 
 # Processing
-MAX_WORKERS = 5
+MAX_WORKERS = 3
 
 # NLP
 CROSSENCODER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"

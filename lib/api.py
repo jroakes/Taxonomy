@@ -28,9 +28,7 @@ import settings
 openai.api_key = settings.OPENAI_API_KEY
 
 # Set Palm API key
-palm.configure(api_key='AIzaSyBQIlQ1KBpbvabUepv51I15YJLnnUe8VJM')
-
-
+palm.configure(api_key=settings.PALM_API_KEY)
 
 
 class APIError(Exception):
@@ -54,7 +52,6 @@ def get_openai_response(
 ) -> Union[str, None]:
     """Get a response from OpenAI's API."""
 
-    logger.info("Getting OpenAI response...")
     try:
         chat_completion = openai.ChatCompletion.create(
             model=model,
