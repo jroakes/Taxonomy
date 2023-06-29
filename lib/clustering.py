@@ -52,7 +52,7 @@ class ClusterTopics:
         self.min_samples = min_samples or round(math.sqrt(self.min_cluster_size))
         self.reduction_dims = reduction_dims
         self.cluster_model = cluster_model
-        self.cluster_description_model = cluster_description_model
+        self.use_llm_descriptions = use_llm_descriptions
 
         self.cluster_categories = cluster_categories
         if cluster_categories:
