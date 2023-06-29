@@ -47,7 +47,7 @@ class ClusterTopics:
         keep_outliers: bool = False,
         n_jobs: int = 6,
     ):
-        self.embedding_model = embedding_model or "all-mpnet-base-v2"
+        self.embedding_model = embedding_model or settings.LOCAL_EMBEDDING_MODEL
         self.min_cluster_size = min_cluster_size
         self.min_samples = min_samples or round(math.sqrt(self.min_cluster_size))
         self.reduction_dims = reduction_dims
@@ -80,8 +80,11 @@ class ClusterTopics:
             return get_palm_embeddings(sentences, n_jobs = self.n_jobs)
         
         else:
-            # Only do batching and progress if many embeddings
+
+            self.embedding_model = settings.LOCAL_EMBEDDING_MODEL
             logger.info('Using local embeddings')
+
+            # Only do batching and progress if many embeddings
 
             if len(sentences) > 64:
                 embeddings = SentenceTransformer(self.embedding_model).encode(
