@@ -22,6 +22,9 @@ from hdbscan import HDBSCAN
 import numpy as np
 
 from loguru import logger
+from lib.api import get_openai_embeddings, get_palm_embeddings
+from lib.prompts import PROMPT_TEMPLATE_CLUSTER
+from lib.api import get_openai_response_chat, get_palm_response
 import settings
 
 
@@ -37,6 +40,7 @@ class ClusterTopics:
         min_samples: Union[int, bool] = None,
         reduction_dims: Union[int, float] = 0,
         cluster_model: str = "hdbscan",
+        cluster_description_model: Union[str, None] = None,
         cluster_categories: List[str] = None,
         use_elbow: bool = True,
         keep_outliers: bool = False,
@@ -47,10 +51,12 @@ class ClusterTopics:
         self.min_samples = min_samples or round(math.sqrt(self.min_cluster_size))
         self.reduction_dims = reduction_dims
         self.cluster_model = cluster_model
-        if cluster_categories is None:
-            self.cluster_categories = cluster_categories
-        else:
+        self.cluster_description_model = cluster_description_model
+
+        self.cluster_categories = cluster_categories
+        if cluster_categories:
             self.cluster_categories = [c for c in filter(len, list(set(cluster_categories)))]
+    
         self.use_elbow = use_elbow
         self.keep_outliers = keep_outliers
         self.n_jobs = n_jobs
@@ -62,19 +68,26 @@ class ClusterTopics:
         self.model_data = None
         self.post_process = None
 
+
     def get_embeddings(self, sentences: List[str]) -> np.ndarray:
 
         """Converts text to embeddings"""
 
-        # Only do batching and progress if many embeddings
-        if len(sentences) > 64:
-            embeddings = SentenceTransformer(self.embedding_model).encode(
-                sentences, show_progress_bar=True, batch_size=64
-            )
+        if self.embedding_model == "openai":
+            return get_openai_embeddings(sentences)
+        elif self.embedding_model == "palm":
+            return get_palm_embeddings(sentences)
+        
         else:
-            embeddings = SentenceTransformer(self.embedding_model).encode(sentences)
+            # Only do batching and progress if many embeddings
+            if len(sentences) > 64:
+                embeddings = SentenceTransformer(self.embedding_model).encode(
+                    sentences, show_progress_bar=True, batch_size=64
+                )
+            else:
+                embeddings = SentenceTransformer(self.embedding_model).encode(sentences)
 
-        return np.asarray(embeddings)
+            return np.asarray(embeddings)
 
     def get_reduced(self, embeddings: Union[torch.Tensor, np.ndarray]) -> np.ndarray:
 
@@ -246,6 +259,43 @@ class ClusterTopics:
             mapping[label] = top_ngrams[top_text_idx][0]
 
         return mapping
+    
+
+    def get_text_label_mapping_llm(self) -> dict:
+        """Gets explanations for each cluster using Palm or OpenAI LLM"""
+
+        labels = np.sort(np.unique(self.labels))
+
+        mapping = {-1: "<outliers>"}
+
+        for label in tqdm(labels, desc="Finding labels", total=len(labels)):
+
+            if label == -1:
+                continue
+
+            idx = np.where(self.labels == label)[0]
+            corpus = self.corpus[idx]
+
+            # Random sample of 200 corpus texts
+            samples = np.random.choice(corpus, size=200, replace=False)
+
+            # Get prompt
+            prompt = PROMPT_TEMPLATE_CLUSTER.format(samples=samples)
+
+
+            if self.cluster_description_model == "palm":
+                explanation = get_palm_response(prompt)
+            elif self.cluster_description_model == "openai":
+                explanation = get_openai_response_chat(prompt, system_message="You are an expert at understanind the intent of Google searches.")
+            else:
+                raise NotImplementedError("Only `palm` and `openai` are implemented.")
+
+
+            mapping[label] = explanation
+
+
+        return mapping
+
 
     def cluster_centroid_deduction(self) -> np.ndarray:
 
@@ -301,6 +351,7 @@ class ClusterTopics:
         labels_idx = np.array([l + n for l in labels_idx])
         self.labels[outliers_idx] = labels_idx
 
+
     def fit(self, corpus: List[str]) -> tuple:
 
         """This is the main fitting function that does all the work."""
@@ -329,7 +380,11 @@ class ClusterTopics:
             )
 
         logger.info("Finding names for cluster labels.")
-        label_mapping = self.get_text_label_mapping()
+
+        if self.cluster_description_model is not None:
+            label_mapping = self.get_text_label_mapping_llm()
+        else:
+            label_mapping = self.get_text_label_mapping()
 
         self.text_labels = [label_mapping[l] for l in self.labels]
 

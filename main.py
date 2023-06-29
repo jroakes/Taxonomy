@@ -1,11 +1,14 @@
 
 from typing import Union, List
 from sentence_transformers import CrossEncoder
+from collections import OrderedDict
 import pandas as pd
 from lib.searchconsole import load_gsc_account_data, load_available_gsc_accounts
 from lib.nlp import clean_gsc_dataframe, get_ngram_frequency, merge_ngrams, filter_knee, get_structure
-from lib.api import get_openai_response_chat, get_palm_response, PROMPT_TEMPLATE
+from lib.api import get_openai_response_chat, get_palm_response
+from lib.prompts import PROMPT_TEMPLATE_TAXONOMY, PROMPT_TEMPLATE_TAXONOMY_LLM_DESCRIPTIONS
 from lib.utils import create_tuples
+from lib.clustering import ClusterTopics
 from loguru import logger
 import settings
 
@@ -73,7 +76,7 @@ def get_data(data: Union[str,pd.DataFrame],
         df = df[df["query"] != '']
 
         # Convert search volume to int
-        df["search_volume"] = df["search_volume"].astype(int)
+        df["search_volume"] = df["search_volume"].fillna(0).astype(int)
 
         # Remove rows where search volume is empty or na
         df = df[df["search_volume"].notna()]
@@ -87,6 +90,7 @@ def get_data(data: Union[str,pd.DataFrame],
 
 def score_and_filter_df(df: pd.DataFrame,
                         ngram_range: tuple = (1, 6),
+                        filter_knee: bool = True,
                         S: int = 100,
                         min_df: int = 2,) -> pd.DataFrame:
     """Score and filter dataframe."""
@@ -122,8 +126,9 @@ def score_and_filter_df(df: pd.DataFrame,
 
     df_ngram = df_ngram.reset_index(drop=True)
 
-    df_ngram = filter_knee(df_ngram, col_name="score", S=S)
-    logger.info(f"Filtered Knee (sensitivity={S}). Dataframe shape: {df_ngram.shape}")
+    if filter_knee:
+        df_ngram = filter_knee(df_ngram, col_name="score", S=S)
+        logger.info(f"Filtered Knee (sensitivity={S}). Dataframe shape: {df_ngram.shape}")
 
     return df_ngram
 
@@ -135,6 +140,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
                     text_column: str = None,
                     search_volume_column: str = None,
                     platform: str = "palm", # "palm" or "openai"
+                    use_llm_descriptions: bool = False,
                     days: int = 30,
                     ngram_range: tuple = (1, 6),
                     min_df: int = 2,
@@ -148,16 +154,48 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
     df = get_data(data, text_column, search_volume_column, days, brand, limit_queries)
     logger.info(f"Got Data. Dataframe shape: {df.shape}")
 
-    # Get ngram frequency
-    df_ngram = score_and_filter_df(df, ngram_range, S, min_df)
-    logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
 
-    # Get samples
-    samples = df_ngram["query"].tolist()[:900]
-    logger.info(f"Got samples. Number of samples: {len(samples)}")
+    if use_llm_descriptions:
+        logger.info("Using LLM Descriptions.")
+        # Get ngram frequency
+        df_ngram = score_and_filter_df(df, ngram_range=ngram_range, filter_knee=False, min_df=min_df)
+        logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
+        queries = list(set(df_ngram["query"].tolist()))
 
-    prompt = PROMPT_TEMPLATE.format(samples=samples, brand=brand)
-    
+        cluster_model = ClusterTopics(
+                                        embedding_model = platform,
+                                        min_cluster_size = 5,
+                                        min_samples = 3,
+                                        reduction_dims  = 5,
+                                        cluster_model = "agglomerative",
+                                        cluster_description_model = platform
+                                    )
+        
+        labels, text_labels = cluster_model.fit_predict(queries)
+        label_lookup = {query: label for query, label in zip(queries, text_labels)}
+
+        def lookup_label(query):
+            if query not in label_lookup:
+                return "<UNK>"
+            return label_lookup[query]
+
+        df_ngram["description"] = df_ngram["query"].map(lookup_label)
+
+        samples = list(set(text_labels))
+        logger.info(f"Got samples. Number of samples: {len(samples)}")
+        prompt = PROMPT_TEMPLATE_TAXONOMY_LLM_DESCRIPTIONS.format(samples=samples, brand=brand)
+
+    else:
+
+        logger.info("Using Elbow to define top ngram queries.")
+        df_ngram = score_and_filter_df(df, ngram_range=ngram_range, min_df=min_df, S=S)
+        logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
+        samples = list(set(df_ngram["query"].tolist()))[:900]
+        logger.info(f"Got samples. Number of samples: {len(samples)}")
+        prompt = PROMPT_TEMPLATE_TAXONOMY.format(samples=samples, brand=brand)
+
+
+    # Get response    
     if platform == "palm":
         logger.info("Using Palm API.")
         response = get_palm_response(prompt)
@@ -187,19 +225,24 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 def add_categories(taxonomy:List[str], df: pd.DataFrame, brand: Union[str, None] = None) -> pd.DataFrame:
     """Add categories to dataframe."""
 
+    logger.info("Finding Categories")
+
+
     queries = list(set(df['original_query'].tolist()))
     if brand:
         taxonomies = [brand] + taxonomy.copy()
     else:
         taxonomies = taxonomy.copy()
-    
-    # Get last category of taxonomy
-    # TODO: Ideally we want to match to children and roll-up to parents.  This will match to parents.
-    categories = [" ".join(list(set(t.split(" > ")))) for t in taxonomies]
 
+
+    # Use ordered dict to keep only unique terms of t.split(" > ") in taxonomies.
+    categories = [" ".join(OrderedDict.fromkeys(t.split(" > ")).keys()) for t in taxonomies]
+    
     model = CrossEncoder(settings.CROSSENCODER_MODEL_NAME, max_length=128)
 
     compare_pairs = create_tuples(categories, queries)
+
+    logger.info(f"Comparing {len(compare_pairs)} items with cross-encoding.")
 
     scores = model.predict(compare_pairs, batch_size=512)
 

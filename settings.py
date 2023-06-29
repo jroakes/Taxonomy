@@ -14,6 +14,8 @@ MAX_WORKERS = 2
 
 # NLP
 CROSSENCODER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+PALM_EMBEDDING_MODEL = "models/embedding-gecko-001"
+OPENAI_EMBEDDING_MODEL = "text-embedding-ada-002"
 EMBEDDER_MODEL = "all-MiniLM-L6-v2"
 OPEN_AI_MODEL = "gpt-4"
 PALM_MODEL = "models/text-bison-001"

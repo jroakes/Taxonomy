@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from typing import List, Tuple, Union
 import json
+import numpy as np
 
 import openai
 from google.generativeai.types import safety_types
 import google.generativeai as palm
 
+from tqdm.auto import tqdm
 import settings
 from loguru import logger
 
@@ -27,122 +29,6 @@ openai.api_key = settings.OPENAI_API_KEY
 # Set Palm API key
 palm.configure(api_key='AIzaSyBQIlQ1KBpbvabUepv51I15YJLnnUe8VJM')
 
-
-
-PROMPT_TEMPLATE_bak = """
-As an expert at taxomomy creation, we need your help to develop a taxonomy. You will be given a list of topics and must distill them into a cogent taxonomy.
-
-As an example, here is a list of sample topics:
-```
-boys t-shirts
-boys shoes
-blue dress for teens
-red girls dress
-mens running shoes
-boys socks
-tye-died chirts boys
-boys nike court legacy shoes
-plaid neck-tie
-jim clark
-adidas mens running shoes
-bow ties
-blue bow ties
-adidas neo mens running shoes 8.5
-```
-
-Here is how the sample topics are grouped into a taxonomy:
-```
-- mens
-  - shoes
-    - running
-  - ties
-    - neck
-    - bow
-- boys
-  - shirts
-  - shoes
-  - socks
-- girls
-  - dresses
-```
-
-Please provide a very high-level hierarchical taxonomy based on the topics. DO NOT try to create a taxonomy for every topic. Instead, create a taxonomy that represents the major themes found in the topics. 
-
-Topics:
-{samples}
-
-
-Output format MUST be:
-- Category
-  - Subcategory
-    - Sub-subcategory
-  - Subcategory
-- Category
-  - Subcategory
-  ...
-
-The first level MUST be `{brand}`.
-DO NOT attempt to make up sub-categories that are not in the topics.
-
-Begin!
-"""
-
-PROMPT_TEMPLATE = """As an expert at taxonomy creation, we need your help to develop a high-level taxonomy. You will be given a list of topics and must distill them into a clear and concise taxonomy.
-
-As an example, here is a list of sample topics:
-```
-boys t-shirts
-boys shoes
-blue dress for teens
-red girls dress
-mens running shoes
-boys socks
-tye-died chirts boys
-boys nike court legacy shoes
-plaid neck-tie
-jim clark
-adidas mens running shoes
-bow ties
-blue bow ties
-adidas neo mens running shoes 8.5
-```
-
-Here is how the sample topics are grouped into a taxonomy:
-```
-- mens
-  - shoes
-    - running
-  - ties
-    - neck
-    - bow
-- boys
-  - shirts
-  - shoes
-  - socks
-- girls
-  - dresses
-```
-
-Please provide a high-level hierarchical taxonomy based on the topics. This should broadly represent the major themes found in the topics, and we do not need a taxonomy for every individual topic. 
-
-Topics:
-{samples}
-
-Your output should be structured as follows:
-- Category
-  - Subcategory
-    - Sub-subcategory
-  - Subcategory
-- Category
-  - Subcategory
-  ...
-
-This taxonomy is for the brand: `{brand}`. Please do not invent any sub-categories that do not naturally arise from the provided topics. For example, if there is no mention of or implied relationship to a 'leather' sub-category in the topics, do not add 'leather' to your taxonomy.
-
-We expect the taxonomy to be broad rather than deeply detailed. As a rule of thumb, please keep your taxonomy no more than three levels deep.
-
-Begin!
-"""
 
 
 
@@ -206,6 +92,30 @@ def get_openai_response_chat(
     except RetryError as e:
         logger.error("API Retry Error: " + str(e))
         raise APIError(str(e))
+
+
+
+def get_openai_embeddings(texts: List[str], 
+                        model: str = settings.OPENAI_EMBEDDING_MODEL) -> np.ndarray:
+  """Get embeddings from OpenAI's API."""
+
+  @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+  def get_single_embedding(text: str) -> np.ndarray:
+    return np.asarray(openai.Embedding.create(input = [text], model=model)['data'][0]['embedding'])
+
+  return np.asarray([get_single_embedding(text) for text in tqdm(texts, desc="Getting OpenAI embeddings")])
+
+
+
+def get_palm_embeddings(texts: List[str], 
+                        model: str = settings.PALM_EMBEDDING_MODEL) -> np.ndarray:
+  """Get embeddings from PALM's API."""
+
+  @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+  def get_single_embedding(text: str) -> np.ndarray:
+    return np.asarray(palm.generate_embeddings(model, text))
+
+  return np.asarray([get_single_embedding(text) for text in tqdm(texts, desc="Getting PALM embeddings")])
 
 
 

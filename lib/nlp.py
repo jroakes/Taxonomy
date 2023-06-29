@@ -45,10 +45,31 @@ def get_structure(text: str) -> List[str]:
     return result
 
 
+def plot_knee(df: pd.DataFrame, col_name: str = "score", S: int = 100):
+    """Plot line graph with knee locations marked with s=0 and s with provided value."""
+
+    from matplotlib import pyplot as plt
+    
+    kneedle_given = KneeLocator(range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing", S=S)
+    kneedle_base = KneeLocator(range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing")
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.plot(df[col_name])
+    ax.axvline(kneedle_base.knee, color="red", linestyle="--", label="knee")
+    ax.axvline(kneedle_given.knee, color="green", linestyle="--", label=f"knee (S={S})")    
+    
+    ax.set_title(f"Knee plot for {col_name}")
+    ax.set_xlabel("ngram")
+    ax.set_ylabel(col_name)
+    ax.legend()
+    plt.show()
+    
+
 
 def filter_knee(df: pd.DataFrame, col_name: str = "score", S: int = 100) -> pd.DataFrame:   
     kneedle = KneeLocator(range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing", S=S)
     df_knee = df.iloc[:kneedle.knee]
+    plot_knee(df, col_name, S)
     return df_knee
 
 
