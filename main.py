@@ -171,7 +171,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
                                         cluster_description_model = platform
                                     )
         
-        labels, text_labels = cluster_model.fit_predict(queries)
+        labels, text_labels = cluster_model.fit(queries)
         label_lookup = {query: label for query, label in zip(queries, text_labels)}
 
         def lookup_label(query):

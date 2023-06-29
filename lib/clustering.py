@@ -274,10 +274,11 @@ class ClusterTopics:
                 continue
 
             idx = np.where(self.labels == label)[0]
-            corpus = self.corpus[idx]
+            samples = self.corpus[idx]
 
             # Random sample of 200 corpus texts
-            samples = np.random.choice(corpus, size=200, replace=False)
+            if len(samples) > 200:
+                samples = np.random.choice(samples, size=200, replace=False)
 
             # Get prompt
             prompt = PROMPT_TEMPLATE_CLUSTER.format(samples=samples)
