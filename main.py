@@ -186,10 +186,10 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
         cluster_model = ClusterTopics(
                                         embedding_model = cluster_embeddings_model,
-                                        min_cluster_size = 5,
+                                        min_cluster_size = 10,
                                         min_samples = 3,
                                         reduction_dims  = 5,
-                                        cluster_model = "agglomerative",
+                                        cluster_model = "hdbscan",
                                         use_llm_descriptions = True
                                     )
         
