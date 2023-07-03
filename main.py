@@ -90,7 +90,7 @@ def get_data(data: Union[str,pd.DataFrame],
 
 def score_and_filter_df(df: pd.DataFrame,
                         ngram_range: tuple = (1, 6),
-                        filter_knee: bool = True,
+                        filter_by_knee: bool = True,
                         S: int = 100,
                         min_df: int = 2,) -> pd.DataFrame:
     """Score and filter dataframe."""
@@ -119,16 +119,20 @@ def score_and_filter_df(df: pd.DataFrame,
 
 
     #Updata score column to be the average of the normalized columns
-    df_ngram["score"] = df_ngram[["search_volume", "frequency", "merged_frequency"]].mean(axis=1)
+    df_ngram["score"] = df_ngram[["search_volume", "frequency", "merged_frequency"]].product(axis=1)
 
     # Sort by score
     df_ngram = df_ngram.sort_values(by=["score"], ascending=False)
 
     df_ngram = df_ngram.reset_index(drop=True)
 
-    if filter_knee:
+    logger.info(f"Length prior to filtering by knee: {len(df_ngram)}")
+
+    if filter_by_knee:
         df_ngram = filter_knee(df_ngram, col_name="score", S=S)
         logger.info(f"Filtered Knee (sensitivity={S}). Dataframe shape: {df_ngram.shape}")
+
+    logger.info(f"Length after to filtering by knee: {len(df_ngram)}")
 
     return df_ngram
 
@@ -180,7 +184,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
         logger.info("Using LLM Descriptions.")
         # Get ngram frequency
-        df_ngram = score_and_filter_df(df, ngram_range=ngram_range, filter_knee=False, min_df=min_df)
+        df_ngram = score_and_filter_df(df, ngram_range=ngram_range, filter_by_knee=False, min_df=min_df)
         logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
         queries = list(set(df_ngram["query"].tolist()))
 

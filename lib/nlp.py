@@ -5,6 +5,7 @@ from sentence_transformers import CrossEncoder
 from tqdm.auto import tqdm
 from nltk.util import ngrams
 from kneed import KneeLocator
+from loguru import logger
 
 import settings
 
@@ -56,7 +57,7 @@ def plot_knee(df: pd.DataFrame, col_name: str = "score", S: int = 100):
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(df[col_name])
     ax.axvline(kneedle_base.knee, color="red", linestyle="--", label="knee")
-    ax.axvline(kneedle_given.knee, color="green", linestyle="--", label=f"knee (S={S})")    
+    ax.axvline(kneedle_given.knee, color="green", linestyle="--", label=f"knee (S={S})")
     
     ax.set_title(f"Knee plot for {col_name}")
     ax.set_xlabel("ngram")
@@ -66,8 +67,20 @@ def plot_knee(df: pd.DataFrame, col_name: str = "score", S: int = 100):
     
 
 
-def filter_knee(df: pd.DataFrame, col_name: str = "score", S: int = 100) -> pd.DataFrame:   
+def filter_knee(df: pd.DataFrame, col_name: str = "score", S: int = 100) -> pd.DataFrame:
+    """Filter dataframe to only include rows up to the knee."""
+    
     kneedle = KneeLocator(range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing", S=S)
+
+    while kneedle.knee is None and S > 1:
+        S -= 1
+        kneedle = KneeLocator(range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing", S=S)
+
+    if kneedle.knee is None:
+        return df
+    else:
+        logger.info(f"Knee found at {kneedle.knee} with S={S}")
+    
     df_knee = df.iloc[:kneedle.knee]
     plot_knee(df, col_name, S)
     return df_knee

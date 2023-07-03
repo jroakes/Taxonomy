@@ -179,8 +179,8 @@ Queries:
 Begin!"""
 
 
-PROMPT_TEMPLATE_CLUSTER = """As an expert at reviewing search queries, please provide a concise name for a section of content about the queries.
+PROMPT_TEMPLATE_CLUSTER = """As an expert at reviewing search queries, please provide a concise name for a website section of content about the queries.
 Queries:
 {samples}
 
-Begin!"""
+Section Name:"""
