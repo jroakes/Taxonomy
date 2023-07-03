@@ -20,7 +20,7 @@ blue bow ties
 adidas neo mens running shoes 8.5
 ```
 
-Here is how the sample topics are grouped into a taxonomy:
+Here is how the sample topics may be grouped into a taxonomy:
 ```
 - mens
   - shoes
@@ -36,7 +36,7 @@ Here is how the sample topics are grouped into a taxonomy:
   - dresses
 ```
 
-Please provide a high-level hierarchical taxonomy based on the topics. This should broadly represent the major themes found in the topics, and we do not need a taxonomy for every individual topic. 
+Please provide a high-level hierarchical taxonomy that broadly represent the major themes found in the topics. 
 
 Topics:
 {samples}
@@ -50,12 +50,14 @@ Your output should be structured as follows:
   - Subcategory
   ...
 
-These are brands that may be discussed in the topics: `{brands}`.
-DO NOT include these brand names in your taxonomy. For example, if there is a topic about 'adidas shoes', do not add 'adidas' to your taxonomy.
-DO NOT invent any sub-categories that do not naturally arise from the provided descriptions. For example, if there is no mention of or implied relationship to a 'leather' sub-category in the topics, do not add 'leather' to your taxonomy.
-DO NOT create an "other" category. If there is a topic that does not fit into any of the categories, please leave it out of the taxonomy.
+To do a great job, please keep the following in mind:
+* These are brands that may be discussed in the topics: `{brands}`. DO NOT include these brand names in your taxonomy. For example, if there is a topics about 'adidas shoes' and 'adidas' is one of the brands, do not add the word 'adidas' to your taxonomy.
+* DO NOT invent or guess any sub-categories that do not naturally arise from the provided topics.
+* DO NOT create an "other", "miscellaneous", or other catch-all category. If there is a topics that would require its own main category and it would be the only member, please ignore it.
+* IGNORE login, about, contact, and other topics that are not about products or services.
+* DO NOT Place items in more than one category. For example, if there is a topic about 'mens running shoes', do not add 'mens' and 'shoes' to your taxonomy at the same level. Pick one.
 
-We expect the taxonomy to be broad rather than deeply detailed. As a rule of thumb, please keep your taxonomy no more than three levels deep.
+We expect the taxonomy to be broad rather than deeply detailed. As a rule of thumb, please keep your taxonomy no more than four levels deep, and no more than a few top-level categories.
 
 Begin!
 """
@@ -92,7 +94,8 @@ Here is how the sample topics are grouped into a taxonomy:
   - dresses
 ```
 
-Please provide a high-level hierarchical taxonomy based on the descriptions. This should broadly represent the major themes found in the descriptions. 
+Please provide a high-level hierarchical taxonomy that broadly represent the major themes found in the section desctiptions. 
+ 
 
 Descriptions:
 {samples}
@@ -106,12 +109,14 @@ Your output should be structured as follows:
   - Subcategory
   ...
 
-These are brands that may be discussed in the topics: `{brands}`.
-DO NOT include these brand names in your taxonomy. For example, if there is a topic about 'adidas shoes', do not add 'adidas' to your taxonomy.
-DO NOT invent any sub-categories that do not naturally arise from the provided descriptions. For example, if there is no mention of or implied relationship to a 'leather' sub-category in the topics, do not add 'leather' to your taxonomy.
-DO NOT create an "other" category. If there is a topic that does not fit into any of the categories, please leave it out of the taxonomy.
+To do a great job, please keep the following in mind:
+* These are brands that may be discussed in the sections: `{brands}`. DO NOT include these brand names in your taxonomy. For example, if there is a section about 'adidas shoes', do not add 'adidas' to your taxonomy.
+* DO NOT invent or guess any sub-categories that do not naturally arise from the provided section descriptions.
+* DO NOT create an "other", "miscellaneous", or other catch-all category. If there is a section that would require its own main category and it would be the only member, please ignore it.
+* IGNORE login, about, contact, and other sections that are not about products or services.
+* DO NOT Place items in more than one category. For example, if there is a section description about 'mens running shoes', do not add 'mens' and 'shoes' to your taxonomy. Pick one.
 
-We expect the taxonomy to be broad rather than deeply detailed. As a rule of thumb, please keep your taxonomy no more than three levels deep.
+We expect the taxonomy to be broad rather than deeply detailed. As a rule of thumb, please keep your taxonomy no more than four levels deep, and no more than a few top-level categories.
 
 Begin!
 """

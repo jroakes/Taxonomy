@@ -131,11 +131,11 @@ def merge_ngrams(df: pd.DataFrame):
 
     df_out = df_out.merge(df, on="feature", how="left")
 
-    # Calculate the score for the merged ngrams
-    df_out["score"] = df_out["merged_frequency"] * df_out["ngram_size"] * df_out["frequency"]
+    df_out["frequency"] = df_out["frequency"] / df_out["frequency"].max()
+    df_out["merged_frequency"] = df_out["merged_frequency"] / df_out["merged_frequency"].max()
 
-    # Normalize scores
-    df_out["score"] = df_out["score"] / df_out["score"].max()
+    # Calculate the score for the merged ngrams
+    df_out["score"] = df_out[["frequency", "merged_frequency"]].mean(axis=1)
 
     # sort by score and reset index
     df_out = df_out.sort_values(by=["score"], ascending=False).reset_index(drop=True)

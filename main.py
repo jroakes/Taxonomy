@@ -2,6 +2,7 @@
 from typing import Union, List
 from sentence_transformers import CrossEncoder
 from collections import OrderedDict
+import re
 import pandas as pd
 from lib.searchconsole import load_gsc_account_data, load_available_gsc_accounts
 from lib.nlp import clean_gsc_dataframe, get_ngram_frequency, merge_ngrams, filter_knee, get_structure
@@ -106,44 +107,37 @@ def score_and_filter_df(df: pd.DataFrame,
 
     df_ngram = df_ngram.rename(columns={"feature": "query"})
 
-    # Merge with original dataframe
-    df_ngram = df_ngram.merge(df, on="query", how="left")
+    # Sum search_volume column for df rows where query contains feature
+    df_ngram["search_volume"] = df_ngram["query"].apply(lambda x: df[df["query"].str.contains(x)]["search_volume"].sum())
 
-    # Drop duplicates
-    df_ngram = df_ngram.drop_duplicates(subset=["query"])
-
-    # drop if any column is na
-    df_ngram = df_ngram.dropna()
-
-    # Normalize the columns: search_volume,  frequency,  merged_frequency,  ngram_size
+    # Normalize the columns: search_volume
     df_ngram["search_volume"] = df_ngram["search_volume"] / df_ngram["search_volume"].max()
-    df_ngram["frequency"] = df_ngram["frequency"] / df_ngram["frequency"].max()
-    df_ngram["merged_frequency"] = df_ngram["merged_frequency"] / df_ngram["merged_frequency"].max()
-
-
-    #Updata score column to be the average of the normalized columns
-    df_ngram["score"] = df_ngram[["search_volume", "frequency", "merged_frequency"]].mean(axis=1)
+    #Updata score column to be the average of the normalized column
+    df_ngram["score"] = df_ngram[["search_volume", "score"]].mean(axis=1)
 
     # Sort by score
-    df_ngram = df_ngram.sort_values(by=["merged_frequency"], ascending=False)
+    df_ngram = df_ngram.sort_values(by=["score"], ascending=False)
 
     df_ngram = df_ngram.reset_index(drop=True)
 
     if len(df_ngram) <= settings.MAX_SAMPLES:
         logger.info(f"Final score and filter length: {len(df_ngram)}")
+        print(df_ngram.head())
         return df_ngram
     
-    df_ngram_knee = None
+
+    df_knee = None
     S = settings.MAX_SAMPLES
 
     # Filter by knee
-    while df_ngram_knee is None or len(df_ngram_knee) > settings.MAX_SAMPLES:
-        df_ngram_knee = filter_knee(df_ngram.copy(), col_name="merged_frequency", S=S)
+    while df_knee is None or len(df_knee) > settings.MAX_SAMPLES:
+        df_knee = filter_knee(df_ngram.copy(), col_name="score", S=S)
         S -= 100
     
-    logger.info(f"Filtered Knee (sensitivity={S}). Dataframe shape: {df_ngram.shape}")
+    logger.info(f"Filtered Knee (sensitivity={S}). Dataframe shape: {df_knee.shape}")
+    print(df_knee.head())
 
-    return df_ngram_knee
+    return df_knee
 
 
 
@@ -192,14 +186,13 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
         logger.info("Using LLM Descriptions.")
         # Get ngram frequency
-        df_ngram = score_and_filter_df(df, ngram_range=ngram_range, min_df=min_df)
-        logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
-        queries = list(set(df_ngram["query"].tolist()))
+        logger.info(f"Dataframe shape: {df.shape}")
+        queries = list(set(df["query"].tolist()))
 
         cluster_model = ClusterTopics(
                                         embedding_model = cluster_embeddings_model,
-                                        min_cluster_size = 10,
-                                        min_samples = 3,
+                                        min_cluster_size = 5,
+                                        min_samples = 2,
                                         reduction_dims  = 5,
                                         cluster_model = "hdbscan",
                                         use_llm_descriptions = True
@@ -213,7 +206,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
                 return "<UNK>"
             return label_lookup[query]
 
-        df_ngram["description"] = df_ngram["query"].map(lookup_label)
+        df["description"] = df["query"].map(lookup_label)
 
         samples = list(set(text_labels))
         logger.info(f"Got samples. Number of samples: {len(samples)}")
@@ -226,7 +219,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
         logger.info("Using Elbow to define top ngram queries.")
         df_ngram = score_and_filter_df(df, ngram_range=ngram_range, min_df=min_df)
         logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
-        samples = list(set(df_ngram["query"].tolist()))[:900]
+        samples = list(set(df_ngram["query"].tolist()))[:settings.MAX_SAMPLES]
         logger.info(f"Got samples. Number of samples: {len(samples)}")
         brands = ", ".join(brand_terms)
         prompt = PROMPT_TEMPLATE_TAXONOMY.format(samples=samples, brands=brands)
