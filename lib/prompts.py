@@ -51,11 +51,11 @@ Your output should be structured as follows:
   ...
 
 To do a great job, please keep the following in mind:
-* These are brands that may be discussed in the topics: `{brands}`. DO NOT include these brand names in your taxonomy. For example, if there is a topics about 'adidas shoes' and 'adidas' is one of the brands, do not add the word 'adidas' to your taxonomy.
+* These are brands that may be discussed in the topics: `{brands}`. DO NOT include these brand names in your taxonomy. For example, if there is a topics about 'adidas shoes' and 'adidas' is one of the given brands, do not add the word 'adidas' to your taxonomy.
 * DO NOT invent or guess any sub-categories that do not naturally arise from the provided topics.
-* DO NOT create an "other", "miscellaneous", or other catch-all category. If there is a topics that would require its own main category and it would be the only member, please ignore it.
+* DO NOT create an "other", "miscellaneous", or any catch-all category. If there is a topics that would require its own main category and it would be the only member, please ignore it.
 * IGNORE login, about, contact, and other topics that are not about products or services.
-* DO NOT Place items in more than one category. For example, if there is a topic about 'mens running shoes', do not add 'mens' and 'shoes' to your taxonomy at the same level. Pick one.
+* DO NOT place items in more than one category. For example, if there is a topic about 'mens running shoes', do not add 'mens' and 'shoes' to your taxonomy at the same level. Pick one.
 
 We expect the taxonomy to be broad rather than deeply detailed. As a rule of thumb, please keep your taxonomy no more than four levels deep, and no more than a few top-level categories.
 
@@ -63,7 +63,7 @@ Begin!
 """
 
 
-PROMPT_TEMPLATE_TAXONOMY_LLM_DESCRIPTIONS = """As an expert at taxonomy creation, we need your help to develop a high-level taxonomy. You will be given a list of descriptions of website sections and must distill them into a clear and concise taxonomy.
+PROMPT_TEMPLATE_TAXONOMY_LLM_DESCRIPTIONS = """As an expert at taxonomy creation, we need your help to develop a high-level taxonomy. You will be given a list of descriptions of website sections and must distill them into a clear and concise website IA taxonomy.
 
 As an example, here is a list of sample descriptions:
 ```
@@ -94,10 +94,10 @@ Here is how the sample topics are grouped into a taxonomy:
   - dresses
 ```
 
-Please provide a high-level hierarchical taxonomy that broadly represent the major themes found in the section desctiptions. 
+Please provide a high-level hierarchical taxonomy that broadly represent the major themes found in the section descriptions. 
  
 
-Descriptions:
+Section Descriptions:
 {samples}
 
 Your output should be structured as follows:
@@ -110,11 +110,11 @@ Your output should be structured as follows:
   ...
 
 To do a great job, please keep the following in mind:
-* These are brands that may be discussed in the sections: `{brands}`. DO NOT include these brand names in your taxonomy. For example, if there is a section about 'adidas shoes', do not add 'adidas' to your taxonomy.
+* These are brands that may be discussed in the sections: `{brands}`. DO NOT include these brand names in your taxonomy. For example, if there is a section about 'adidas shoes' and 'adidas' is in this list of brands, do not add the word 'adidas' to your taxonomy.
 * DO NOT invent or guess any sub-categories that do not naturally arise from the provided section descriptions.
-* DO NOT create an "other", "miscellaneous", or other catch-all category. If there is a section that would require its own main category and it would be the only member, please ignore it.
+* DO NOT create an "other", "miscellaneous", or any catch-all category. If there is a section that would require its own main category and it would be the only member, please ignore it.
 * IGNORE login, about, contact, and other sections that are not about products or services.
-* DO NOT Place items in more than one category. For example, if there is a section description about 'mens running shoes', do not add 'mens' and 'shoes' to your taxonomy. Pick one.
+* DO NOT Place items in more than one category. For example, if there is a section description about 'mens running shoes', do not add 'mens' and 'shoes' at the same level. Pick one.
 
 We expect the taxonomy to be broad rather than deeply detailed. As a rule of thumb, please keep your taxonomy no more than four levels deep, and no more than a few top-level categories.
 
@@ -124,7 +124,8 @@ Begin!
 
 
 
-PROMPT_TEMPLATE_CLUSTER = """As an expert at reviewing search queries, please provide a concise name for a website section of content about the queries.
+PROMPT_TEMPLATE_CLUSTER = """As an expert at reviewing user search queries, please provide a concise name for a website IA section that would hold content relevent to the queries.
+
 Queries:
 {samples}
 
