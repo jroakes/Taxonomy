@@ -18,7 +18,7 @@ def get_data(data: Union[str,pd.DataFrame],
              text_column: str = None,
              search_volume_column: str = None,
              days: int = 30, 
-             brand: str = None, 
+             brand_terms: Union[List[str], None] = None, 
              limit_queries: int = 5) -> pd.DataFrame:
     """Get data from Google Search Console or a pandas dataframe."""
 
@@ -40,7 +40,7 @@ def get_data(data: Union[str,pd.DataFrame],
                 logger.info(f"GSC account found. Using: {accounts[0]}")
                 df = load_gsc_account_data(accounts[0], days)
 
-        df = clean_gsc_dataframe(df, brand, limit_queries)
+        df = clean_gsc_dataframe(df, brand_terms, limit_queries)
 
 
 
@@ -63,6 +63,11 @@ def get_data(data: Union[str,pd.DataFrame],
 
         # Remove other columns
         df = df[["query", "search_volume"]]
+
+        if brand_terms:
+            # Split brand into terms
+            brand_terms = [b.lower().strip() for b in brand_terms]
+            df["query"] = df["query"].apply(lambda x: ' '.join([word for word in x.split(' ') if word.lower() not in (brand_terms)]))
 
         df['original_query'] = df['query']
 
@@ -90,8 +95,6 @@ def get_data(data: Union[str,pd.DataFrame],
 
 def score_and_filter_df(df: pd.DataFrame,
                         ngram_range: tuple = (1, 6),
-                        filter_by_knee: bool = True,
-                        S: int = 100,
                         min_df: int = 2,) -> pd.DataFrame:
     """Score and filter dataframe."""
 
@@ -126,15 +129,21 @@ def score_and_filter_df(df: pd.DataFrame,
 
     df_ngram = df_ngram.reset_index(drop=True)
 
-    logger.info(f"Length prior to filtering by knee: {len(df_ngram)}")
+    if len(df_ngram) <= settings.MAX_SAMPLES:
+        logger.info(f"Final score and filter length: {len(df_ngram)}")
+        return df_ngram
+    
+    df_ngram_knee = None
+    S = settings.MAX_SAMPLES
 
-    if filter_by_knee and len(df_ngram) > int(S*4):
-        df_ngram = filter_knee(df_ngram, col_name="merged_frequency", S=S)
-        logger.info(f"Filtered Knee (sensitivity={S}). Dataframe shape: {df_ngram.shape}")
+    # Filter by knee
+    while df_ngram_knee is None or len(df_ngram_knee) > settings.MAX_SAMPLES:
+        df_ngram_knee = filter_knee(df_ngram.copy(), col_name="merged_frequency", S=S)
+        S -= 100
+    
+    logger.info(f"Filtered Knee (sensitivity={S}). Dataframe shape: {df_ngram.shape}")
 
-    logger.info(f"Length after to filtering by knee: {len(df_ngram)}")
-
-    return df_ngram
+    return df_ngram_knee
 
 
 
@@ -149,8 +158,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
                     days: int = 30,
                     ngram_range: tuple = (1, 6),
                     min_df: int = 2,
-                    S: int = 500,
-                    brand: str = None,
+                    brand_terms: List[str] = None,
                     limit_queries: int = 5,
                     debug_responses: bool = False):
     """Kickoff function to create taxonomy from GSC data.
@@ -176,7 +184,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
     """
 
     # Get data
-    df = get_data(data, text_column, search_volume_column, days, brand, limit_queries)
+    df = get_data(data, text_column, search_volume_column, days, brand_terms, limit_queries)
     logger.info(f"Got Data. Dataframe shape: {df.shape}")
 
 
@@ -184,7 +192,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
         logger.info("Using LLM Descriptions.")
         # Get ngram frequency
-        df_ngram = score_and_filter_df(df, ngram_range=ngram_range, filter_by_knee=False, min_df=min_df)
+        df_ngram = score_and_filter_df(df, ngram_range=ngram_range, min_df=min_df)
         logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
         queries = list(set(df_ngram["query"].tolist()))
 
@@ -209,16 +217,19 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
         samples = list(set(text_labels))
         logger.info(f"Got samples. Number of samples: {len(samples)}")
-        prompt = PROMPT_TEMPLATE_TAXONOMY_LLM_DESCRIPTIONS.format(samples=samples, brand=brand)
+        brands = ", ".join(brand_terms)
+
+        prompt = PROMPT_TEMPLATE_TAXONOMY_LLM_DESCRIPTIONS.format(samples=samples, brands=brands)
 
     else:
 
         logger.info("Using Elbow to define top ngram queries.")
-        df_ngram = score_and_filter_df(df, ngram_range=ngram_range, min_df=min_df, S=S)
+        df_ngram = score_and_filter_df(df, ngram_range=ngram_range, min_df=min_df)
         logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
         samples = list(set(df_ngram["query"].tolist()))[:900]
         logger.info(f"Got samples. Number of samples: {len(samples)}")
-        prompt = PROMPT_TEMPLATE_TAXONOMY.format(samples=samples, brand=brand)
+        brands = ", ".join(brand_terms)
+        prompt = PROMPT_TEMPLATE_TAXONOMY.format(samples=samples, brands=brands)
 
 
     # Get response    
@@ -248,17 +259,15 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
 
 
-def add_categories(taxonomy:List[str], df: pd.DataFrame, brand: Union[str, None] = None) -> pd.DataFrame:
+def add_categories(taxonomy:List[str], df: pd.DataFrame) -> pd.DataFrame:
     """Add categories to dataframe."""
 
     logger.info("Finding Categories")
 
 
     queries = list(set(df['original_query'].tolist()))
-    if brand:
-        taxonomies = [brand] + taxonomy.copy()
-    else:
-        taxonomies = taxonomy.copy()
+
+    taxonomies = taxonomy.copy()
 
 
     # Use ordered dict to keep only unique terms of t.split(" > ") in taxonomies.

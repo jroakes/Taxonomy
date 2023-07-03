@@ -72,17 +72,13 @@ def filter_knee(df: pd.DataFrame, col_name: str = "score", S: int = 100) -> pd.D
     
     kneedle = KneeLocator(range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing", S=S)
 
-    while kneedle.knee is None and S > 1:
-        S -= 1
-        kneedle = KneeLocator(range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing", S=S)
-
     if kneedle.knee is None:
         return df
     else:
         logger.info(f"Knee found at {kneedle.knee} with S={S}")
     
     df_knee = df.iloc[:kneedle.knee]
-    plot_knee(df, col_name, S)
+
     return df_knee
 
 
@@ -169,7 +165,7 @@ def get_ngram_frequency(texts: List[str], ngram_range: tuple = (1, 6), min_df: i
 
 
 
-def clean_gsc_dataframe(df: pd.DataFrame, brand: str = None, limit_queries: int = 5) -> pd.DataFrame:
+def clean_gsc_dataframe(df: pd.DataFrame, brand_terms: Union[List[str], None] = None, limit_queries: int = 5) -> pd.DataFrame:
     """Clean up the GSC dataframe."""
 
     df['query'] = df['query'].str.lower()
@@ -188,9 +184,9 @@ def clean_gsc_dataframe(df: pd.DataFrame, brand: str = None, limit_queries: int 
     # Rename impressions to search_volume
     df = df.rename(columns={"impressions": "search_volume"})
 
-    if brand:
+    if brand_terms:
         # Split brand into terms
-        brand_terms = brand.lower().split(' ')
+        brand_terms = [b.lower().strip() for b in brand_terms]
         df["query"] = df["query"].apply(lambda x: ' '.join([word for word in x.split(' ') if word.lower() not in (brand_terms)]))
 
 
