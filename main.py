@@ -119,17 +119,17 @@ def score_and_filter_df(df: pd.DataFrame,
 
 
     #Updata score column to be the average of the normalized columns
-    df_ngram["score"] = df_ngram[["search_volume", "frequency", "merged_frequency"]].product(axis=1)
+    df_ngram["score"] = df_ngram[["search_volume", "frequency", "merged_frequency"]].mean(axis=1)
 
     # Sort by score
-    df_ngram = df_ngram.sort_values(by=["score"], ascending=False)
+    df_ngram = df_ngram.sort_values(by=["merged_frequency"], ascending=False)
 
     df_ngram = df_ngram.reset_index(drop=True)
 
     logger.info(f"Length prior to filtering by knee: {len(df_ngram)}")
 
-    if filter_by_knee:
-        df_ngram = filter_knee(df_ngram, col_name="score", S=S)
+    if filter_by_knee and len(df_ngram) > int(S*4):
+        df_ngram = filter_knee(df_ngram, col_name="merged_frequency", S=S)
         logger.info(f"Filtered Knee (sensitivity={S}). Dataframe shape: {df_ngram.shape}")
 
     logger.info(f"Length after to filtering by knee: {len(df_ngram)}")
