@@ -5,7 +5,7 @@ from collections import OrderedDict
 import re
 import pandas as pd
 from lib.searchconsole import load_gsc_account_data, load_available_gsc_accounts
-from lib.nlp import clean_gsc_dataframe, get_ngram_frequency, merge_ngrams, filter_knee, get_structure
+from lib.nlp import clean_gsc_dataframe, clean_provided_dataframe, get_ngram_frequency, merge_ngrams, filter_knee, get_structure
 from lib.api import get_openai_response_chat, get_palm_response
 from lib.prompts import PROMPT_TEMPLATE_TAXONOMY, PROMPT_TEMPLATE_TAXONOMY_LLM_DESCRIPTIONS, PROMPT_TEMPLATE_TAXONOMY_REVIEW
 from lib.utils import create_tuples
@@ -24,6 +24,7 @@ def get_data(data: Union[str,pd.DataFrame],
     """Get data from Google Search Console or a pandas dataframe."""
 
     df = pd.DataFrame()
+    df_original = pd.DataFrame()
 
     if isinstance(data, str) and ("sc-domain:" in data or "https://" in data):
         df = load_gsc_account_data(data, days)
@@ -32,7 +33,7 @@ def get_data(data: Union[str,pd.DataFrame],
             df_accounts = load_available_gsc_accounts()
             accounts = df_accounts[df_accounts["property"].str.contains(data)]["property"].tolist()
             if len(accounts) == 0:
-                raise ValueError("No GSC account found.")
+                raise AttributeError(f"No GSC account found for: {data}")
             elif len(accounts) > 1:
                 logger.warning(f"Multiple accounts found. {', '.join(accounts)}.")
                 account = input("Which account would you like to use? ")
@@ -58,40 +59,20 @@ def get_data(data: Union[str,pd.DataFrame],
         if search_volume_column is None:
             search_volume_column = input("What is the name of the column with the search volume? ")
         
-
         # Rename columns
         df = df.rename(columns={text_column: "query", search_volume_column: "search_volume"})
 
-        # Remove other columns
-        df = df[["query", "search_volume"]]
+        # Save original dataframe
+        df_original = df.copy()
 
-        if brand_terms:
-            # Split brand into terms
-            brand_terms = [b.lower().strip() for b in brand_terms]
-            df["query"] = df["query"].apply(lambda x: ' '.join([word for word in x.split(' ') if word.lower() not in (brand_terms)]))
-
-        df['original_query'] = df['query']
-
-        # Remove non-english characters from query using regex: [^a-zA-Z0-9\s]
-        df["query"] = df["query"].str.replace(r'[^a-zA-Z0-9\s]', '')
-
-        # Trim whitespace from query
-        df["query"] = df["query"].str.strip()
-
-        # Remove rows where query is empty
-        df = df[df["query"] != '']
-
-        # Convert search volume to int
-        df["search_volume"] = df["search_volume"].fillna(0).astype(int)
-
-        # Remove rows where search volume is empty or na
-        df = df[df["search_volume"].notna()]
+        # Clean
+        df = clean_provided_dataframe(df, brand_terms)
 
     else:
         raise ValueError("Data must be a GSC Property, CSV Filename, or pandas dataframe.")
 
 
-    return df
+    return df, df_original
 
 
 def score_and_filter_df(df: pd.DataFrame,
@@ -188,7 +169,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
     """
 
     # Get data
-    df = get_data(data, text_column, search_volume_column, days, brand_terms, limit_queries)
+    df, df_original = get_data(data, text_column, search_volume_column, days, brand_terms, limit_queries)
     logger.info(f"Got Data. Dataframe shape: {df.shape}")
 
 
@@ -268,6 +249,8 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
     # Add categories
     logger.info("Adding categories.")
+
+    df = df_original if len(df_original) > 0 else df
 
     df = add_categories_clustered(structure, df, 
                                   cluster_embeddings_model = cluster_embeddings_model,
