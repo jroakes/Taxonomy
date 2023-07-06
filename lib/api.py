@@ -44,7 +44,7 @@ class OpenAIError(APIError):
 
 
 @retry(
-    wait=wait_random_exponential(min=1, max=60),
+    wait=wait_random_exponential(min=5, max=60),
     stop=stop_after_attempt(settings.API_RETRY_ATTEMPTS),
 )
 def get_openai_response(
@@ -98,7 +98,7 @@ def get_openai_embeddings(texts: List[str],
                           n_jobs: int = settings.MAX_WORKERS) -> np.ndarray:
     """Get embeddings from OpenAI's API."""
 
-    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(settings.API_RETRY_ATTEMPTS))
     def get_single_embedding(text: str, model: str) -> np.ndarray:
         return np.asarray(openai.Embedding.create(input = [text], model=model)['data'][0]['embedding'])
 
@@ -120,7 +120,7 @@ def get_palm_embeddings(texts: List[str],
                         n_jobs: int = settings.MAX_WORKERS) -> np.ndarray:
     """Get embeddings from PALM's API."""
 
-    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(settings.API_RETRY_ATTEMPTS))
     def get_single_embedding(text: str, model: str) -> np.ndarray:
         return np.asarray(palm.generate_embeddings(model, text))
 
@@ -138,7 +138,7 @@ def get_palm_embeddings(texts: List[str],
 
 
 @retry(
-    wait=wait_random_exponential(min=1, max=60),
+    wait=wait_random_exponential(min=5, max=60),
     stop=stop_after_attempt(settings.API_RETRY_ATTEMPTS),
 )
 def get_palm_response(prompt: str, model: str = settings.PALM_MODEL) -> str:

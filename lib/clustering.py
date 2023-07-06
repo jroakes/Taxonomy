@@ -13,7 +13,8 @@ import torch
 
 from sklearn.metrics import silhouette_samples
 from sklearn.neighbors import NearestNeighbors
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 from kneed import KneeLocator
 import umap.umap_ as umap
 
@@ -21,11 +22,13 @@ from sklearn.cluster import AgglomerativeClustering
 from sklearn.cluster import OPTICS
 from hdbscan import HDBSCAN
 import numpy as np
+import pandas as pd
 
 from loguru import logger
 from lib.api import get_openai_embeddings, get_palm_embeddings
 from lib.prompts import PROMPT_TEMPLATE_CLUSTER
-from lib.api import get_openai_response_chat, get_palm_response
+from lib.api import get_openai_response_chat
+from lib.ctfidf import ClassTfidfTransformer
 import settings
 
 
@@ -74,6 +77,12 @@ class ClusterTopics:
 
         """Converts text to embeddings"""
 
+        # Check if embeddings are already in memory
+        if self.embeddings is not None and all([s in self.corpus for s in sentences]):
+            idx = [np.where(self.corpus == s)[0][0] for s in sentences]
+            return self.embeddings[idx]
+    
+        # Need to build embeddings
         if self.embedding_model == "openai":
             return get_openai_embeddings(sentences, n_jobs = self.n_jobs)
         elif self.embedding_model == "palm":
@@ -94,6 +103,7 @@ class ClusterTopics:
                 embeddings = SentenceTransformer(self.embedding_model).encode(sentences)
 
             return np.asarray(embeddings)
+
 
     def get_reduced(self, embeddings: Union[torch.Tensor, np.ndarray]) -> np.ndarray:
 
@@ -152,6 +162,11 @@ class ClusterTopics:
     def set_cluster_model(self, cluster_model: str) -> None:
         """Sets the cluster type for the class"""
         self.cluster_model = cluster_model
+
+    def set_embeddings(self, embeddings: np.ndarray) -> None:
+        """Sets the embeddings for the class"""
+        self.embeddings = embeddings
+
 
     def get_cluster_model(self, model_name: Union[str, None] = None) -> None:
 
@@ -213,68 +228,112 @@ class ClusterTopics:
                 "Only `hdbscan`, `optics`, and `agglomerative` are implemented."
             )
 
-    def top_ngram_embeddings(
-        self, corpus: List[str], min_df: Union[int, float] = 0.001
-    ) -> tuple:
 
-        """Returns 1-3 term ngrams and their embeddings"""
-        
-        # If a list of categories is given, use those
-        if isinstance(self.cluster_categories, list):
-            return (np.asarray(self.cluster_categories), self.get_embeddings(self.cluster_categories))
-        
-        features = None
+    def top_ngram_embeddings(
+        self, top_n: int = 5, min_df: Union[int, float] = 2
+    ) -> Union[tuple, None]:
+
+        """Returns ngrams by cluster using tfidf and cosine similarity."""
+
+        vocabulary = list(set(self.corpus))
+        labels = np.sort(np.unique([l for l in self.labels if l > -1]))
+        results = []
 
         try:
-            vectorizer = TfidfVectorizer(ngram_range=(1, 3), min_df=min_df)
-            X1 = vectorizer.fit_transform(corpus)
-            features = np.asarray(vectorizer.get_feature_names_out())
-            sums = np.asarray(X1.sum(axis=0))[0]
+            vectorizer = CountVectorizer(stop_words="english", ngram_range=(1, 4), min_df=min_df, vocabulary=vocabulary)
+            c_vectorizer = ClassTfidfTransformer(bm25_weighting=True, reduce_frequent_words=True)
+            feature_names = vectorizer.get_feature_names_out()
+
+            docs = []
+            for label in labels:
+                idx = np.where(self.labels == label)[0]
+                docs.append(" ".join(self.corpus[idx]))
+            
+            X1 = vectorizer.fit_transform(docs)
+            X2 = c_vectorizer.fit(X1).transform(X1)
+
+            for ldx, label in enumerate(labels):
+
+                tfidf_scores = X2[ldx].toarray().flatten()
+                df = pd.DataFrame(list(zip(feature_names, tfidf_scores)), columns=["feature", "tfidf_score"])
+
+                # remove features with zero frequency
+                df = df[df["tfidf_score"] > 0]
+
+                cluster_features = df['feature'].tolist()
+                embeddings = self.get_embeddings(cluster_features)
+
+                centroid = np.mean(embeddings, axis=0)  # centroid of cluster
+
+                # get cosine similarity of each feature to centroid
+                df['sim_score'] = cosine_similarity(embeddings, centroid.reshape(1, -1)).flatten()
+
+                df['score'] = df['tfidf_score'] * df['sim_score']
+
+                # sort by score
+                df = df.sort_values(by=['score'], ascending=False).reset_index(drop=True)
+
+                # get top n features
+                top_features = df['feature'].tolist()[:top_n]
+
+                # get embeddings for top n features
+                top_features_embedding = np.mean(self.get_embeddings(top_features), axis=0)
+
+                results.append({'features': top_features, 'embedding': top_features_embedding})
+
 
         except ValueError as e:
             logger.error(
                 "There was an error in finding top word embeddings: {}".format(str(e))
             )
 
-        if features is not None:
-            return (features, self.get_embeddings(features))
+        if len(results) > 0:
+            return (labels, results)
 
-        return (np.array([]), np.array([]))
+        return None
 
-    def get_text_label_mapping(self, n_neighbors: int = 3) -> dict:
+
+
+    def get_text_label_mapping(self, top_n: int = 5) -> dict:
 
         """Finds the closest n-gram to a clusters centroid.
         Returns a dict to be used to map these to labels."""
 
-        labels_idx, centroids = self.cluster_centroid_deduction()
-        top_ngrams, top_ngram_embeddings = self.top_ngram_embeddings(self.corpus)
+        labels, results = self.top_ngram_embeddings(top_n=top_n)
 
-        neigh = NearestNeighbors(n_neighbors=n_neighbors)
-        neigh.fit(top_ngram_embeddings)
+        text_labels = [", ".join(r['features']) for r in results]
+        text_label_embeddings = np.asarray([r['embedding'] for r in results])
+
+
+        # If a list of categories is given, use those
+        if isinstance(self.cluster_categories, list):
+            # Make sure we have a unique list of categories
+            categories = list(set(self.cluster_categories))
+            
+            category_embeddings = self.get_embeddings(categories)
+            neigh = NearestNeighbors(n_neighbors=1)
+            neigh.fit(category_embeddings)
+
+            # Update text_labels with closest category
+            for i, label in enumerate(labels):
+                top_text_idx = neigh.kneighbors(np.array([text_label_embeddings[i]]))[1].flatten()
+                text_labels[i] = categories[top_text_idx[0]]
+
 
         mapping = {-1: "<outliers>"}
 
-        for i, label in tqdm(
-            enumerate(labels_idx), desc="Finding labels", total=len(labels_idx)
-        ):
-            # skip matching if outlier
-            if label == -1:
-                continue
-
-            top_text_idx = neigh.kneighbors(np.array([centroids[i]]))[1].flatten()
-            mapping[label] = top_ngrams[top_text_idx][0]
+        for i, label in enumerate(labels):
+            mapping[label] = text_labels[i]
 
         return mapping
     
 
 
-    def get_llm_description(self, samples: List[str]) -> str:
+    def get_llm_description(self, text_label: str) -> str:
         """Gets the description of a cluster using LLM"""
 
-        samples = "\n".join(samples)
-
         # Get prompt
-        prompt = PROMPT_TEMPLATE_CLUSTER.format(samples=samples)
+        prompt = PROMPT_TEMPLATE_CLUSTER.format(samples=text_label)
 
 
         explanation = get_openai_response_chat(prompt, 
@@ -285,34 +344,15 @@ class ClusterTopics:
         return explanation
 
 
-    def get_text_label_mapping_llm(self) -> dict:
+    def get_text_label_mapping_llm(self, top_n: int = 5) -> dict:
         """Gets explanations for each cluster using Palm or OpenAI LLM"""
 
-        labels = np.sort(np.unique(self.labels))
-
-        mapping = {-1: "<outliers>"}
-
-        sample_queries = {}
-
-        # Add sample queries for each cluster
-        for label in labels:
-
-            if label == -1:
-                continue
-
-            idx = np.where(self.labels == label)[0]
-            samples = self.corpus[idx]
-
-            # Random sample of 200 corpus texts
-            if len(samples) > 200:
-                samples = np.random.choice(samples, size=200, replace=False)
-
-            sample_queries[label] = samples
+        mapping = self.get_text_label_mapping(top_n = top_n)
         
         # Use multi-threading to get explanations and add to mapping at correct label key
         with concurrent.futures.ThreadPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
 
-            futures = {executor.submit(self.get_llm_description, samples): label for label, samples in sample_queries.items()}
+            futures = {executor.submit(self.get_llm_description, text_label): label for label, text_label in mapping.items()}
 
             for future in tqdm(concurrent.futures.as_completed(futures), desc="Getting LLM explanations", total=len(futures)):
                 label = futures[future]
@@ -378,14 +418,15 @@ class ClusterTopics:
         self.labels[outliers_idx] = labels_idx
 
 
-    def fit(self, corpus: List[str]) -> tuple:
+    def fit(self, corpus: List[str], top_n: int = 5) -> tuple:
 
         """This is the main fitting function that does all the work."""
 
         self.corpus = np.array(corpus)
 
         logger.info("Getting embeddings.")
-        self.embeddings = self.get_embeddings(self.corpus)
+        if self.embeddings is None:
+            self.embeddings = self.get_embeddings(self.corpus)
 
         self.model = self.get_cluster_model()
 
@@ -408,7 +449,7 @@ class ClusterTopics:
         logger.info("Finding names for cluster labels.")
 
         if self.use_llm_descriptions:
-            label_mapping = self.get_text_label_mapping_llm()
+            label_mapping = self.get_text_label_mapping_llm(top_n=top_n)
         else:
             label_mapping = self.get_text_label_mapping()
 
