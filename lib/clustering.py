@@ -65,6 +65,7 @@ class ClusterTopics:
         self.keep_outliers = keep_outliers
         self.n_jobs = n_jobs
         self.embeddings = None
+        self.embedding_size = self.get_embeddings(["test"])[0].shape[0]
         self.corpus = None
         self.labels = None
         self.text_labels = None
@@ -257,6 +258,12 @@ class ClusterTopics:
                 tfidf_scores = X2[ldx].toarray().flatten()
                 df = pd.DataFrame(list(zip(feature_names, tfidf_scores)), columns=["feature", "tfidf_score"])
 
+                tfidf_features = df[df["tfidf_score"] > 0]['feature'].tolist()
+
+                if len(tfidf_features) == 0:
+                    results.append({'features': ["<no label found>"], 'embedding': np.zeros(self.embedding_size)})
+                    continue
+
                 # remove features with zero frequency
                 df = df[df["tfidf_score"] > 0]
 
@@ -323,7 +330,7 @@ class ClusterTopics:
         mapping = {-1: "<outliers>"}
 
         for i, label in enumerate(labels):
-            mapping[label] = text_labels[i]
+            mapping[label] = text_labels[i] if i < len(text_labels) else "<no label found>"
 
         return mapping
     
@@ -451,7 +458,7 @@ class ClusterTopics:
         if self.use_llm_descriptions:
             label_mapping = self.get_text_label_mapping_llm(top_n=top_n)
         else:
-            label_mapping = self.get_text_label_mapping()
+            label_mapping = self.get_text_label_mapping(top_n=top_n)
 
         self.text_labels = [label_mapping[l] for l in self.labels]
 

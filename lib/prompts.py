@@ -3,14 +3,14 @@ PROMPT_TEMPLATE_TAXONOMY = """As an expert in taxonomy creation, we need your as
 Here's an illustrative example to better understand the task at hand. Consider the following list of topics:
 
 - Boys' t-shirts
-- Boys' shoes
-- Blue dress for teens
+- Boys' shoes, boy's sandals, Boys' sneakers
+- Blue dress for teens, blue-green teenager dress
 - Red girls dress
 - Men's running shoes
 - Boys' socks
 - Tye-dye shirts for boys
 - Boys' Nike court legacy shoes
-- Plaid neck-tie
+- Plaid neck-tie, plaid bow-tie
 - Adidas men's running shoes
 - Bow ties
 - Blue bow ties
@@ -102,9 +102,9 @@ Begin!
 
 
 
-PROMPT_TEMPLATE_CLUSTER = """As an expert at understanding search intent, We need your help to provide the main subject being sought after in the following list of topics. You will be given a list of topics and must distill them into a clear and concise subject.
+PROMPT_TEMPLATE_CLUSTER = """As an expert at understanding search intent, We need your help to provide the main subject being sought after in the following list of search queries. Please ONLY provide the subject and no other information. For example, if the search queries are 'adidas shoes, nike shoes, converse shoes', the subject is 'Name-brand shoes'.
 
-Topics:
+Search Topics:
 {samples}
 
 Subject: """

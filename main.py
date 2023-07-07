@@ -7,10 +7,11 @@ import pandas as pd
 from lib.searchconsole import load_gsc_account_data, load_available_gsc_accounts
 from lib.nlp import clean_gsc_dataframe, clean_provided_dataframe, get_ngram_frequency, merge_ngrams, filter_knee, get_structure
 from lib.api import get_openai_response_chat, get_palm_response
-from lib.prompts import PROMPT_TEMPLATE_TAXONOMY, PROMPT_TEMPLATE_TAXONOMY_LLM_DESCRIPTIONS, PROMPT_TEMPLATE_TAXONOMY_REVIEW
+from lib.prompts import PROMPT_TEMPLATE_TAXONOMY, PROMPT_TEMPLATE_TAXONOMY_REVIEW
 from lib.utils import create_tuples
 from lib.clustering import ClusterTopics
 from loguru import logger
+import tiktoken
 import settings
 
 
@@ -125,6 +126,38 @@ def score_and_filter_df(df: pd.DataFrame,
 
     return df_knee
 
+class PromptLengthError(Exception):
+    """Raised when prompt is too long."""
+
+    def __init__(self, message="Prompt is too long."):
+        self.message = message
+        super().__init__(self.message)
+
+
+
+def format_prompt(prompt: str, brands: str, samples: List[str], taxonomy_model: str = 'openai') -> str:
+    """Format prompt."""
+    
+    # Filter samples that include `<outliers>` or `<no label found>`
+    samples = [s for s in samples if "<outliers>" not in s and "<no label found>" not in s]
+    
+    samples = [f"- {s}\n" for s in samples]
+    prompt = prompt.format(samples=samples, brands=brands)
+
+    if taxonomy_model == 'openai':
+        max_length = 8192
+        resp_length = 2000
+        enc = tiktoken.encoding_for_model(settings.OPEN_AI_MODEL)
+        num_tokens = len(enc.encode(prompt))
+        if (num_tokens+resp_length) > max_length:
+            raise PromptLengthError(f"Openai Prompt is too long. Prompt length: {num_tokens}. Max length: {int(max_length-resp_length)}.")
+    
+    else:
+        logger.warning("Palm prompt length not checked.")
+
+    return prompt
+
+
 
 
 
@@ -194,7 +227,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
         def lookup_label(query):
             if query not in label_lookup:
-                return "<UNK>"
+                return "<no label found>"
             return label_lookup[query]
 
         df["description"] = df["query"].map(lookup_label)
@@ -203,7 +236,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
         logger.info(f"Got samples. Number of samples: {len(samples)}")
         brands = ", ".join(brand_terms)
 
-        prompt = PROMPT_TEMPLATE_TAXONOMY.format(samples=samples, brands=brands)
+        prompt = format_prompt(PROMPT_TEMPLATE_TAXONOMY, brands, samples, taxonomy_model = taxonomy_model)
 
     else:
 
@@ -213,7 +246,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
         samples = list(set(df_ngram["query"].tolist()))[:settings.MAX_SAMPLES]
         logger.info(f"Got samples. Number of samples: {len(samples)}")
         brands = ", ".join(brand_terms)
-        prompt = PROMPT_TEMPLATE_TAXONOMY.format(samples=samples, brands=brands)
+        prompt = format_prompt(PROMPT_TEMPLATE_TAXONOMY, brands, samples, taxonomy_model = taxonomy_model)
 
 
     # Get response    
@@ -223,12 +256,14 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
         logger.info("Reviewing Palm's work.")
         prompt = PROMPT_TEMPLATE_TAXONOMY_REVIEW.format(taxonomy=response, brands=brands)
         reviewed_response = get_palm_response(prompt)
+
     elif taxonomy_model == "openai":
         logger.info("Using OpenAI API.")
-        response = get_openai_response_chat(prompt)
+        response = get_openai_response_chat(prompt, model=settings.OPEN_AI_MODEL)
         logger.info("Reviewing OpenAI's work.")
         prompt = PROMPT_TEMPLATE_TAXONOMY_REVIEW.format(taxonomy=response, brands=brands)
         reviewed_response = get_openai_response_chat(prompt)
+
     else:
         raise NotImplementedError("Platform must be 'palm' or 'openai'.")
     
@@ -269,36 +304,41 @@ def add_categories_clustered(structure: List[str], df: pd.DataFrame,
                              cluster_embeddings_model: Union[str, None] = None,
                              min_cluster_size: int = 5,
                              min_samples: int = 2,
+                             cluster_model: str = "hdbscan",
                              match_col: str = "query") -> pd.DataFrame:
     
     """Add categories to dataframe."""
     texts = df[match_col].tolist()
+    structure_parts = [" ".join(s.split(" > ")[-2:]) for s in structure]
+    structure_map = {p:s for p, s in zip(structure_parts, structure)}
 
     model = ClusterTopics(
             embedding_model = cluster_embeddings_model,
             min_cluster_size =  min_cluster_size,
             min_samples = None,
             reduction_dims = 5,
-            cluster_model = "hdbscan",
-            cluster_categories = structure,
+            cluster_model = cluster_model,
+            cluster_categories = structure_parts,
             keep_outliers = True,
             n_jobs = 3,
         )
 
 
     labels, text_labels = model.fit(texts)
-    label_lookup = {text: label for text, label in zip(texts, text_labels)}
+    label_lookup = {text: structure_map[label] for text, label in zip(texts, text_labels)}
     df['taxonomy'] = df[match_col].map(label_lookup)
 
     return df
 
 
-def add_categories(taxonomy:List[str], df: pd.DataFrame) -> pd.DataFrame:
+# Need to update this to use a new cross-encoder model with better embeddings
+def add_categories(taxonomy:List[str], df: pd.DataFrame,
+                                       match_col: str = "query") -> pd.DataFrame:
     """Add categories to dataframe."""
 
     logger.info("Finding Categories")
 
-    queries = list(set(df['original_query'].tolist()))
+    queries = list(set(df[match_col].tolist()))
 
     taxonomies = taxonomy.copy()
 
@@ -311,7 +351,7 @@ def add_categories(taxonomy:List[str], df: pd.DataFrame) -> pd.DataFrame:
 
     logger.info(f"Comparing {len(compare_pairs)} items with cross-encoding.")
 
-    scores = model.predict(compare_pairs, batch_size=512)
+    scores = model.predict(compare_pairs, batch_size=128)
 
     df_category = pd.DataFrame({"scores": scores,
                                 "categories": [s[0] for s in compare_pairs],
@@ -322,9 +362,9 @@ def add_categories(taxonomy:List[str], df: pd.DataFrame) -> pd.DataFrame:
     # This assigns the most similar category to each query
     df_category = df_category.groupby(["queries"], as_index=False).agg({'categories': 'first', 'scores': 'first'})
 
-    df_category.columns = ['original_query', 'taxonomy_category', 'similiary_score']
+    df_category.columns = [match_col, 'taxonomy_category', 'similiary_score']
 
-    df_out = df.merge(df_category, on="original_query", how="left")
+    df_out = df.merge(df_category, on=match_col, how="left")
 
     # Lookup and add back original taxonomy
     df_out['taxonomy'] = df_out['taxonomy_category'].map(lambda x: taxonomies[categories.index(x)])

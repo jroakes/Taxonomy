@@ -208,21 +208,21 @@ def clean_provided_dataframe(df: pd.DataFrame, brand_terms: Union[List[str], Non
     if brand_terms:
         # Split brand into terms
         brand_terms = [b.lower().strip() for b in brand_terms]
-        df["query"] = df["query"].apply(lambda x: ' '.join([word for word in x.split(' ') if word.lower() not in (brand_terms)]))
+        df.loc[:, "query"] = df["query"].apply(lambda x: ' '.join([word for word in x.split(' ') if word.lower() not in (brand_terms)]))
 
-    df['original_query'] = df['query']
+    df.loc[:, "original_query"] = df['query']
 
     # Remove non-english characters from query using regex: [^a-zA-Z0-9\s]
-    df["query"] = df["query"].str.replace(r'[^a-zA-Z0-9\s]', '')
+    df.loc[:, "query"] = df["query"].str.replace(r'[^a-zA-Z0-9\s]', '')
 
     # Trim whitespace from query
-    df["query"] = df["query"].str.strip()
+    df.loc[:, "query"] = df["query"].str.strip()
 
     # Remove rows where query is empty
     df = df[df["query"] != '']
 
     # Convert search volume to int
-    df["search_volume"] = df["search_volume"].fillna(0).astype(int)
+    df.loc[:, "search_volume"] = df["search_volume"].fillna(0).astype(int)
 
     # Remove rows where search volume is empty or na
     df = df[df["search_volume"].notna()]
