@@ -166,9 +166,10 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
                     text_column: str = None,
                     search_volume_column: str = None,
                     taxonomy_model: str = "palm", # "palm" or "openai"
+                    match_back_type: str = "cluster", # "cluster" or "cross-encode"
                     use_clustering: bool = False,
                     use_llm_cluster_descriptions: bool = False,
-                    cluster_embeddings_model: Union[str, None] = None,
+                    cluster_embeddings_model: Union[str, None] = None, # "palm", "openai", or "local"
                     min_cluster_size: int = 5,
                     min_samples: int = 2,
                     days: int = 30,
@@ -287,10 +288,16 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
     df = df_original if len(df_original) > 0 else df
 
-    df = add_categories_clustered(structure, df, 
-                                  cluster_embeddings_model = cluster_embeddings_model,
-                                  min_cluster_size = min_cluster_size,
-                                  min_samples = min_samples)
+    if match_back_type == "cluster":
+        df = add_categories_clustered(structure, df, 
+                                    cluster_embeddings_model = cluster_embeddings_model,
+                                    min_cluster_size = min_cluster_size,
+                                    min_samples = min_samples)
+    elif match_back_type == "cross-encode":
+        df = add_categories_cross_encoded(structure, df)
+
+    else:
+        raise NotImplementedError("match_back_type must be 'cluster' or 'cross-encode'.")
 
 
     logger.info("Done.")
@@ -315,7 +322,7 @@ def add_categories_clustered(structure: List[str], df: pd.DataFrame,
     model = ClusterTopics(
             embedding_model = cluster_embeddings_model,
             min_cluster_size =  min_cluster_size,
-            min_samples = None,
+            min_samples = min_samples,
             reduction_dims = 5,
             cluster_model = cluster_model,
             cluster_categories = structure_parts,
@@ -332,20 +339,20 @@ def add_categories_clustered(structure: List[str], df: pd.DataFrame,
 
 
 # Need to update this to use a new cross-encoder model with better embeddings
-def add_categories(taxonomy:List[str], df: pd.DataFrame,
-                                       match_col: str = "query") -> pd.DataFrame:
+def add_categories_cross_encoded(structure:List[str], df: pd.DataFrame,
+                                 match_col: str = "query") -> pd.DataFrame:
     """Add categories to dataframe."""
 
     logger.info("Finding Categories")
 
     queries = list(set(df[match_col].tolist()))
 
-    taxonomies = taxonomy.copy()
+    taxonomies = structure.copy()
 
     # Use ordered dict to keep only unique terms of t.split(" > ") in taxonomies.
     categories = [" ".join(OrderedDict.fromkeys(t.split(" > ")).keys()) for t in taxonomies]
     
-    model = CrossEncoder(settings.CROSSENCODER_MODEL_NAME, max_length=128)
+    model = CrossEncoder(settings.CROSSENCODER_MODEL_NAME, max_length=256)
 
     compare_pairs = create_tuples(categories, queries)
 
@@ -364,10 +371,12 @@ def add_categories(taxonomy:List[str], df: pd.DataFrame,
 
     df_category.columns = [match_col, 'taxonomy_category', 'similiary_score']
 
-    df_out = df.merge(df_category, on=match_col, how="left")
+    df_category['taxonomy'] = df_category['taxonomy_category'].map(lambda x: taxonomies[categories.index(x)])
 
-    # Lookup and add back original taxonomy
-    df_out['taxonomy'] = df_out['taxonomy_category'].map(lambda x: taxonomies[categories.index(x)])
+    # drop taxonomy_category
+    df_category.drop(columns=['taxonomy_category'], inplace=True)
+
+    df_out = df.merge(df_category, on=match_col, how="left")
 
     return df_out
 

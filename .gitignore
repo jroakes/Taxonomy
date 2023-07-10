@@ -168,3 +168,6 @@ cython_debug/
 
 #JSON
 *.json
+
+# Old files
+old/
