@@ -318,6 +318,8 @@ def add_categories_clustered(structure: List[str], df: pd.DataFrame,
     texts = df[match_col].tolist()
     structure_parts = [" ".join(s.split(" > ")[-2:]) for s in structure]
     structure_map = {p:s for p, s in zip(structure_parts, structure)}
+    if '<outliers>' not in structure_map:
+        structure_map['<outliers>'] = 'Miscellaneous'
 
     model = ClusterTopics(
             embedding_model = cluster_embeddings_model,

@@ -126,7 +126,7 @@ class ClusterTopics:
 
         # returns np.ndarray
         return umap.UMAP(
-            n_neighbors=3,
+            n_neighbors=self.min_cluster_size,
             n_components=n_dims,
             random_state=settings.RANDOM_SEED,
         ).fit_transform(embeddings)
