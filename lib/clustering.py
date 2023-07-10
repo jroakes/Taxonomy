@@ -272,10 +272,10 @@ class ClusterTopics:
 
                 centroid = np.mean(embeddings, axis=0)  # centroid of cluster
 
-                # get cosine similarity of each feature to centroid
-                df['sim_score'] = cosine_similarity(embeddings, centroid.reshape(1, -1)).flatten()
+                # get cosine similarity of each feature to centroid using iloc
+                df.loc[:, 'sim_score'] = cosine_similarity(embeddings, centroid.reshape(1, -1)).flatten()
 
-                df['score'] = df['tfidf_score'] * df['sim_score']
+                df.loc[:, 'score'] = df['tfidf_score'] * df['sim_score']
 
                 # sort by score
                 df = df.sort_values(by=['score'], ascending=False).reset_index(drop=True)
