@@ -21,7 +21,7 @@ def get_data(data: Union[str,pd.DataFrame],
              search_volume_column: str = None,
              days: int = 30, 
              brand_terms: Union[List[str], None] = None, 
-             limit_queries: int = 5) -> pd.DataFrame:
+             limit_queries: Union[int, None] = None) -> pd.DataFrame:
     """Get data from Google Search Console or a pandas dataframe."""
 
     df = pd.DataFrame()
@@ -63,11 +63,20 @@ def get_data(data: Union[str,pd.DataFrame],
         # Rename columns
         df = df.rename(columns={text_column: "query", search_volume_column: "search_volume"})
 
+        # Check if there is a column that contains URLs in the rows
+        url_columns = [c for c in df.columns if df[c].dtype == 'object' and df.head(10)[c].str.match(r"https?://").all()]
+
+        if len(url_columns) == 1:
+            logger.info(f"Found URL column: {url_columns[0]}.")
+            df = df.rename(columns={url_columns[0]: "page"})
+        else:
+            limit_queries = None
+       
         # Save original dataframe
         df_original = df.copy()
 
         # Clean
-        df = clean_provided_dataframe(df, brand_terms)
+        df = clean_provided_dataframe(df, brand_terms, limit_queries)
 
     else:
         raise ValueError("Data must be a GSC Property, CSV Filename, or pandas dataframe.")
@@ -99,13 +108,16 @@ def score_and_filter_df(df: pd.DataFrame,
 
     # Normalize the columns: search_volume
     df_ngram["search_volume"] = df_ngram["search_volume"] / df_ngram["search_volume"].max()
-    #Updata score column to be the average of the normalized column
-    df_ngram["score"] = df_ngram[["search_volume", "score"]].mean(axis=1)
+
+    #Update score column to be the average of the normalized column
+    df_ngram["score"] = df_ngram[["search_volume", "merged_frequency"]].mean(axis=1)
 
     # Sort by score
     df_ngram = df_ngram.sort_values(by=["score"], ascending=False)
 
     df_ngram = df_ngram.reset_index(drop=True)
+
+    return df_ngram
 
     if len(df_ngram) <= settings.MAX_SAMPLES:
         logger.info(f"Final score and filter length: {len(df_ngram)}")
@@ -167,6 +179,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
                     search_volume_column: str = None,
                     taxonomy_model: str = "palm", # "palm" or "openai"
                     match_back_type: str = "cluster", # "cluster" or "cross-encode"
+                    match_back_cluster_model: str = "agglomerative", # "hdbscan" or "agglomerative"
                     use_clustering: bool = False,
                     use_llm_cluster_descriptions: bool = False,
                     cluster_embeddings_model: Union[str, None] = None, # "palm", "openai", or "local"
@@ -291,6 +304,7 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
     if match_back_type == "cluster":
         df = add_categories_clustered(structure, df, 
                                     cluster_embeddings_model = cluster_embeddings_model,
+                                    cluster_model = match_back_cluster_model,
                                     min_cluster_size = min_cluster_size,
                                     min_samples = min_samples)
     elif match_back_type == "cross-encode":

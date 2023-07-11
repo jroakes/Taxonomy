@@ -134,11 +134,8 @@ def merge_ngrams(df: pd.DataFrame):
     df_out["frequency"] = df_out["frequency"] / df_out["frequency"].max()
     df_out["merged_frequency"] = df_out["merged_frequency"] / df_out["merged_frequency"].max()
 
-    # Calculate the score for the merged ngrams
-    df_out["score"] = df_out[["frequency", "merged_frequency"]].mean(axis=1)
-
     # sort by score and reset index
-    df_out = df_out.sort_values(by=["score"], ascending=False).reset_index(drop=True)
+    df_out = df_out.sort_values(by=["merged_frequency"], ascending=False).reset_index(drop=True)
 
     return df_out
 
@@ -158,6 +155,9 @@ def get_ngram_frequency(texts: List[str], ngram_range: tuple = (1, 6), min_df: i
     # Create a dataframe of feature names and frequency
     df_cv = pd.DataFrame(list(zip(feature_names, scores)), columns=["feature", "frequency"])
 
+    # Keep only features with > 2 characters
+    df_cv = df_cv[df_cv["feature"].str.len() > 2].copy()
+
     # Sort by frequency
     df_cv = df_cv.sort_values(by=["frequency"], ascending=False).reset_index(drop=True)
 
@@ -165,8 +165,12 @@ def get_ngram_frequency(texts: List[str], ngram_range: tuple = (1, 6), min_df: i
 
 
 
-def clean_gsc_dataframe(df: pd.DataFrame, brand_terms: Union[List[str], None] = None, limit_queries: int = 5) -> pd.DataFrame:
+def clean_gsc_dataframe(df: pd.DataFrame, 
+                        brand_terms: Union[List[str], None] = None, 
+                        limit_queries: Union[int, None] = None) -> pd.DataFrame:
     """Clean up the GSC dataframe."""
+
+    df['original_query'] = df['query'].copy()
 
     df['query'] = df['query'].str.lower()
 
@@ -176,10 +180,8 @@ def clean_gsc_dataframe(df: pd.DataFrame, brand_terms: Union[List[str], None] = 
     # Trim whitespace from query
     df['query'] = df['query'].str.strip()
 
-    # Remove rows where query is empty
-    df = df[df['query'] != '']
-
-    df['original_query'] = df['query']
+    # Remove rows where query is at least 3 characters
+    df = df[df["query"].str.len() >= 3].copy()
 
     # Rename impressions to search_volume
     df = df.rename(columns={"impressions": "search_volume"})
@@ -200,17 +202,22 @@ def clean_gsc_dataframe(df: pd.DataFrame, brand_terms: Union[List[str], None] = 
     return df
 
 
-def clean_provided_dataframe(df: pd.DataFrame, brand_terms: Union[List[str], None] = None) -> pd.DataFrame:
+def clean_provided_dataframe(df: pd.DataFrame, 
+                             brand_terms: Union[List[str], None] = None,
+                             limit_queries: Union[int, None] = None) -> pd.DataFrame:
 
     # Remove other columns
-    df = df[["query", "search_volume"]]
+    if 'page' in df.columns:
+        df = df[["query", "page", "search_volume"]].copy()
+    else:
+        df = df[["query", "search_volume"]].copy()
+
+    df['original_query'] = df['query'].copy()
 
     if brand_terms:
         # Split brand into terms
         brand_terms = [b.lower().strip() for b in brand_terms]
         df.loc[:, "query"] = df["query"].apply(lambda x: ' '.join([word for word in x.split(' ') if word.lower() not in (brand_terms)]))
-
-    df.loc[:, "original_query"] = df['query']
 
     # Remove non-english characters from query using regex: [^a-zA-Z0-9\s]
     df.loc[:, "query"] = df["query"].str.replace(r'[^a-zA-Z0-9\s]', '')
@@ -218,14 +225,21 @@ def clean_provided_dataframe(df: pd.DataFrame, brand_terms: Union[List[str], Non
     # Trim whitespace from query
     df.loc[:, "query"] = df["query"].str.strip()
 
-    # Remove rows where query is empty
-    df = df[df["query"] != '']
+    # Limit queries to ones with at least 3 characters.
+    df = df[df["query"].str.len() >= 3]
 
     # Convert search volume to int
     df.loc[:, "search_volume"] = df["search_volume"].fillna(0).astype(int)
 
     # Remove rows where search volume is empty or na
     df = df[df["search_volume"].notna()]
+
+    # Sort by clicks and impressions descending
+    df = df.sort_values(by=['search_volume'], ascending=False)
+
+    # Keep only the first 5 queries for each page. This is to avoid pages with a lot of queries from dominating the data
+    if limit_queries:
+        df = df.groupby("page").head(limit_queries)
 
     return df
 

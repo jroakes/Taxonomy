@@ -265,7 +265,7 @@ class ClusterTopics:
                     continue
 
                 # remove features with zero frequency
-                df = df[df["tfidf_score"] > 0]
+                df = df[df["tfidf_score"] > 0].copy()
 
                 cluster_features = df['feature'].tolist()
                 embeddings = self.get_embeddings(cluster_features)
