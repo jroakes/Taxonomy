@@ -2,16 +2,14 @@
 from typing import Union, List
 from sentence_transformers import CrossEncoder
 from collections import OrderedDict
-import re
 import pandas as pd
 from lib.searchconsole import load_gsc_account_data, load_available_gsc_accounts
 from lib.nlp import clean_gsc_dataframe, clean_provided_dataframe, get_ngram_frequency, merge_ngrams, filter_knee, get_structure
 from lib.api import get_openai_response_chat, get_palm_response
-from lib.prompts import PROMPT_TEMPLATE_TAXONOMY, PROMPT_TEMPLATE_TAXONOMY_REVIEW
+from lib.prompts import PROMPT_TEMPLATE_TAXONOMY, PROMPT_TEMPLATE_TAXONOMY_16k, PROMPT_TEMPLATE_TAXONOMY_REVIEW
 from lib.utils import create_tuples
 from lib.clustering import ClusterTopics
 from loguru import logger
-import tiktoken
 import settings
 
 
@@ -117,7 +115,6 @@ def score_and_filter_df(df: pd.DataFrame,
 
     df_ngram = df_ngram.reset_index(drop=True)
 
-    return df_ngram
 
     if len(df_ngram) <= settings.MAX_SAMPLES:
         logger.info(f"Final score and filter length: {len(df_ngram)}")
@@ -131,12 +128,12 @@ def score_and_filter_df(df: pd.DataFrame,
     # Filter by knee
     while df_knee is None or len(df_knee) > settings.MAX_SAMPLES:
         df_knee = filter_knee(df_ngram.copy(), col_name="score", S=S)
-        S -= 100
+        S -= 25
     
-    logger.info(f"Filtered Knee (sensitivity={S}). Dataframe shape: {df_knee.shape}")
-    print(df_knee.head())
+    logger.info(f"Filtered Knee (sensitivity={int(S+25)}). Dataframe shape: {df_knee.shape}")
 
     return df_knee
+
 
 class PromptLengthError(Exception):
     """Raised when prompt is too long."""
@@ -147,49 +144,19 @@ class PromptLengthError(Exception):
 
 
 
-def format_prompt(prompt: str, brands: str, samples: List[str], taxonomy_model: str = 'openai') -> str:
-    """Format prompt."""
-    
-    # Filter samples that include `<outliers>` or `<no label found>`
-    samples = [s for s in samples if "<outliers>" not in s and "<no label found>" not in s]
-    
-    samples = [f"- {s}\n" for s in samples]
-    prompt = prompt.format(samples=samples, brands=brands)
-
-    if taxonomy_model == 'openai':
-        max_length = 8192
-        resp_length = 2000
-        enc = tiktoken.encoding_for_model(settings.OPEN_AI_MODEL)
-        num_tokens = len(enc.encode(prompt))
-        if (num_tokens+resp_length) > max_length:
-            raise PromptLengthError(f"Openai Prompt is too long. Prompt length: {num_tokens}. Max length: {int(max_length-resp_length)}.")
-    
-    else:
-        logger.warning("Palm prompt length not checked.")
-
-    return prompt
-
-
-
-
-
 
 def create_taxonomy(data: Union[str, pd.DataFrame],
+                    website_subject: str = "",
                     text_column: str = None,
                     search_volume_column: str = None,
-                    taxonomy_model: str = "palm", # "palm" or "openai"
-                    match_back_type: str = "cluster", # "cluster" or "cross-encode"
-                    match_back_cluster_model: str = "agglomerative", # "hdbscan" or "agglomerative"
-                    use_clustering: bool = False,
-                    use_llm_cluster_descriptions: bool = False,
-                    cluster_embeddings_model: Union[str, None] = None, # "palm", "openai", or "local"
-                    min_cluster_size: int = 5,
-                    min_samples: int = 2,
+                    cluster_embeddings_model: Union[str, None] = "local", # "palm", "openai", or "local"
+                    min_cluster_size: int = 10,
+                    min_samples: int = 3,
                     days: int = 30,
-                    ngram_range: tuple = (1, 6),
-                    min_df: int = 2,
+                    ngram_range: tuple = (1, 5),
+                    min_df: int = 5,
                     brand_terms: List[str] = None,
-                    limit_queries: int = 5,
+                    limit_queries_per_page: int = 5,
                     debug_responses: bool = False):
     """Kickoff function to create taxonomy from GSC data.
 
@@ -197,90 +164,43 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
         data (Union[str, pd.DataFrame]): GSC Property, CSV Filename, or pandas dataframe.
         text_column (str, optional): Name of the column with the queries. Defaults to None.
         search_volume_column (str, optional): Name of the column with the search volume. Defaults to None.
-        taxonomy_model (str, optional): Name of the taxonomy model. Defaults to "palm".
-        use_clustering (bool, optional): Whether to use clustering. Defaults to False.
-        use_llm_cluster_descriptions (bool, optional): Whether to use LLM descriptions for clustering. Defaults to False.
-        cluster_embeddings_model (Union[str, None], optional): Name of the cluster embeddings model. Defaults to None.
+        cluster_embeddings_model (Union[str, None], optional): Name of the cluster embeddings model. Defaults to "local".
         min_cluster_size (int, optional): Minimum cluster size to use for clustering. Defaults to 5.
         min_samples (int, optional): Minimum samples to use for clustering. Defaults to 2.
         days (int, optional): Number of days to get data from. Defaults to 30.
         ngram_range (tuple, optional): Ngram range to use for scoring. Defaults to (1, 6).
         min_df (int, optional): Minimum document frequency to use for scoring. Defaults to 2.
         brand_terms (List[str], optional): List of brand terms to remove from queries. Defaults to None.
-        limit_queries (int, optional): Number of queries to use for clustering. Defaults to 5.
+        limit_queries_per_page (int, optional): Number of queries to use for clustering. Defaults to 5.
         debug_responses (bool, optional): Whether to print debug responses. Defaults to False.
 
     Returns:
         structure, df, samples
-        Tuple[List[str], pd.DataFrame, List[str]]: Taxonomy list, original dataframe, and sample queries.
+        Tuple[List[str], pd.DataFrame, str: Taxonomy list, original dataframe, and query_data.
     """
 
     # Get data
-    df, df_original = get_data(data, text_column, search_volume_column, days, brand_terms, limit_queries)
+    df, df_original = get_data(data, text_column, search_volume_column, days, brand_terms, limit_queries_per_page)
     logger.info(f"Got Data. Dataframe shape: {df.shape}")
 
 
-    if use_clustering:
+    logger.info("Filtering Query Data.")
+    df_ngram = score_and_filter_df(df, ngram_range=ngram_range, min_df=min_df)
+    logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
+    query_data = df_ngram.head(settings.MAX_SAMPLES)[['query', 'score']].to_markdown(index=None)
 
-        logger.info("Using LLM Descriptions.")
-        # Get ngram frequency
-        logger.info(f"Dataframe shape: {df.shape}")
-        queries = list(set(df["query"].tolist()))
-
-        cluster_model = ClusterTopics(
-                                        embedding_model = cluster_embeddings_model,
-                                        min_cluster_size = min_cluster_size,
-                                        min_samples = min_samples,
-                                        reduction_dims  = 5,
-                                        cluster_model = "hdbscan",
-                                        use_llm_descriptions = use_llm_cluster_descriptions
-                                    )
-        
-        _, text_labels = cluster_model.fit(queries)
-        label_lookup = {query: label for query, label in zip(queries, text_labels)}
-
-        def lookup_label(query):
-            if query not in label_lookup:
-                return "<no label found>"
-            return label_lookup[query]
-
-        df["description"] = df["query"].map(lookup_label)
-
-        samples = list(set(text_labels))
-        logger.info(f"Got samples. Number of samples: {len(samples)}")
-        brands = ", ".join(brand_terms)
-
-        prompt = format_prompt(PROMPT_TEMPLATE_TAXONOMY, brands, samples, taxonomy_model = taxonomy_model)
-
-    else:
-
-        logger.info("Using Elbow to define top ngram queries.")
-        df_ngram = score_and_filter_df(df, ngram_range=ngram_range, min_df=min_df)
-        logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
-        samples = list(set(df_ngram["query"].tolist()))[:settings.MAX_SAMPLES]
-        logger.info(f"Got samples. Number of samples: {len(samples)}")
-        brands = ", ".join(brand_terms)
-        prompt = format_prompt(PROMPT_TEMPLATE_TAXONOMY, brands, samples, taxonomy_model = taxonomy_model)
-
-
-    # Get response    
-    if taxonomy_model == "palm":
-        logger.info("Using Palm API.")
-        response = get_palm_response(prompt)
-        logger.info("Reviewing Palm's work.")
-        prompt = PROMPT_TEMPLATE_TAXONOMY_REVIEW.format(taxonomy=response, brands=brands)
-        reviewed_response = get_palm_response(prompt)
-
-    elif taxonomy_model == "openai":
-        logger.info("Using OpenAI API.")
-        response = get_openai_response_chat(prompt, model=settings.OPEN_AI_MODEL)
-        logger.info("Reviewing OpenAI's work.")
-        prompt = PROMPT_TEMPLATE_TAXONOMY_REVIEW.format(taxonomy=response, brands=brands)
-        reviewed_response = get_openai_response_chat(prompt)
-
-    else:
-        raise NotImplementedError("Platform must be 'palm' or 'openai'.")
+    logger.info(f"Got samples. Number of samples: {len(query_data)}")
+    brand_terms = ", ".join(brand_terms) if brand_terms else ""
     
+    prompt = PROMPT_TEMPLATE_TAXONOMY_16k.format(subject=website_subject, query_data=query_data, brand_terms=brand_terms)
+
+    logger.info("Using OpenAI API.")
+    response = get_openai_response_chat(prompt, model=settings.OPENAI_LARGE_MODEL)
+
+    logger.info("Reviewing OpenAI's work.")
+    prompt = PROMPT_TEMPLATE_TAXONOMY_REVIEW.format(taxonomy=response, brands=brand_terms)
+    reviewed_response = get_openai_response_chat(prompt)
+
     if not response or not reviewed_response:
         logger.error("No response from API.")
         return None
@@ -301,22 +221,15 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
     df = df_original if len(df_original) > 0 else df
 
-    if match_back_type == "cluster":
-        df = add_categories_clustered(structure, df, 
-                                    cluster_embeddings_model = cluster_embeddings_model,
-                                    cluster_model = match_back_cluster_model,
-                                    min_cluster_size = min_cluster_size,
-                                    min_samples = min_samples)
-    elif match_back_type == "cross-encode":
-        df = add_categories_cross_encoded(structure, df)
-
-    else:
-        raise NotImplementedError("match_back_type must be 'cluster' or 'cross-encode'.")
+    df = add_categories_clustered(structure, df, 
+                                 cluster_embeddings_model = cluster_embeddings_model,
+                                 min_cluster_size = min_cluster_size,
+                                 min_samples = min_samples)
 
 
     logger.info("Done.")
 
-    return structure, df, samples
+    return structure, df, query_data
 
 
 
@@ -325,12 +238,11 @@ def add_categories_clustered(structure: List[str], df: pd.DataFrame,
                              cluster_embeddings_model: Union[str, None] = None,
                              min_cluster_size: int = 5,
                              min_samples: int = 2,
-                             cluster_model: str = "hdbscan",
                              match_col: str = "query") -> pd.DataFrame:
     
     """Add categories to dataframe."""
     texts = df[match_col].tolist()
-    structure_parts = [" ".join(s.split(" > ")[-2:]) for s in structure]
+    structure_parts = [" ".join(s.split(" > ")[-1:]) for s in structure]
     structure_map = {p:s for p, s in zip(structure_parts, structure)}
     if '<outliers>' not in structure_map:
         structure_map['<outliers>'] = 'Miscellaneous'
@@ -339,8 +251,8 @@ def add_categories_clustered(structure: List[str], df: pd.DataFrame,
             embedding_model = cluster_embeddings_model,
             min_cluster_size =  min_cluster_size,
             min_samples = min_samples,
-            reduction_dims = 5,
-            cluster_model = cluster_model,
+            reduction_dims = 2,
+            cluster_model = "hdbscan",
             cluster_categories = structure_parts,
             keep_outliers = True,
             n_jobs = 3,

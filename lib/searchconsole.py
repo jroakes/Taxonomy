@@ -1,5 +1,5 @@
 """Search Console API wrapper."""
-import os
+
 import re
 from typing import Union
 

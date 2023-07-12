@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import os
 import glob
-from typing import List, Tuple
+from typing import List
 from itertools import product
 import logging
 from loguru import logger

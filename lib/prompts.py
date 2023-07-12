@@ -100,6 +100,31 @@ Please read the guidelines closely prior to beginning and double-check your work
 Begin!
 """
 
+PROMPT_TEMPLATE_TAXONOMY_16k = """
+As an expert in taxonomy creation, we need your assistance in developing a clear, high-level website taxonomy based on a provided list of topics. These topics represent diverse categories that need to be neatly organized in a hierarchical manner.
+
+Subject: {subject}
+
+Topics:
+{query_data}
+
+The topics are a list of topic ngrams and their scores. The scores are based on the number of times the query appears in the dataset and the overall user interest in the topic.  Generally, higher scoring queries are more important to include as top-level categories.
+
+Please adhere to the following format for your output:
+
+- Category
+  - Subcategory
+    - Sub-subcategory
+  - Subcategory
+- Category
+  - Subcategory
+  ...
+
+If anything can't be categorized, please add it to the Miscellaneous category. Please exclude mentioning the following brand terms in the taxonomy: {brand_terms}.  In addition, ignore any topics that are not relevant to the products and services offered by the company.
+
+Begin!
+"""
+
 
 
 PROMPT_TEMPLATE_CLUSTER = """As an expert at understanding search intent, We need your help to provide the main subject being sought after in the following list of search queries. Please ONLY provide the subject and no other information. For example, if the search queries are 'adidas shoes, nike shoes, converse shoes', the subject is 'Name-brand shoes'.

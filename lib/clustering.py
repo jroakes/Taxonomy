@@ -5,7 +5,7 @@
 
 import os
 import math
-from tqdm.auto import tqdm
+from tqdm import tqdm
 from typing import List, Union
 import concurrent.futures
 from sentence_transformers import SentenceTransformer
@@ -16,6 +16,10 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from kneed import KneeLocator
+import warnings
+from numba.core.errors import NumbaDeprecationWarning
+warnings.filterwarnings("ignore", category=NumbaDeprecationWarning)
+
 import umap.umap_ as umap
 
 from sklearn.cluster import AgglomerativeClustering
@@ -126,7 +130,7 @@ class ClusterTopics:
 
         # returns np.ndarray
         return umap.UMAP(
-            n_neighbors=self.min_cluster_size,
+            n_neighbors=self.min_samples,
             n_components=n_dims,
             random_state=settings.RANDOM_SEED,
         ).fit_transform(embeddings)

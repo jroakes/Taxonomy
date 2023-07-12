@@ -10,7 +10,7 @@ import openai
 from google.generativeai.types import safety_types
 import google.generativeai as palm
 
-from tqdm.auto import tqdm
+from tqdm import tqdm
 import settings
 from loguru import logger
 
@@ -57,8 +57,8 @@ def get_openai_response(
             model=model,
             messages=messages,
             request_timeout=settings.OPENAI_REQUEST_TIMEOUT,
-            max_tokens=2000,
-            temperature=0.0,
+            max_tokens = 6000 if '-16k' in model else 2000,
+            temperature = 0.0,
             n=1,
         )
 
@@ -72,7 +72,7 @@ def get_openai_response(
 
 def get_openai_response_chat(
     messages: List[dict] | str,
-    model: str = settings.OPEN_AI_MODEL,
+    model: str = settings.OPENAI_QUALITY_MODEL,
     system_message: dict | str = "You are an expert taxonomy creator.",
 ) -> Union[str, None]:
     """Get a response from OpenAI's chat API."""
