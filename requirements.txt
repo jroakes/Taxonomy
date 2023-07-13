@@ -6,10 +6,6 @@ nltk
 kneed
 pandas
 git+https://github.com/joshcarty/google-searchconsole
-google-auth
-google-api-python-client
-google-auth-oauthlib
-google-generativeai
 python-dotenv
 umap-learn
 hdbscan

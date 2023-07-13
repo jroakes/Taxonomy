@@ -177,7 +177,7 @@ def create_taxonomy(
     search_volume_column: str = None,
     cluster_embeddings_model: Union[
         str, None
-    ] = "local",  # "palm", "openai", or "local"
+    ] = "local",  # "openai" or "local"
     min_cluster_size: int = 10,
     min_samples: int = 3,
     days: int = 30,

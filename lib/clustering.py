@@ -45,7 +45,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 class ClusterTopics:
     def __init__(
         self,
-        embedding_model: Union[str, None] = "all-mpnet-base-v2",
+        embedding_model: Union[str, None] = None,
         min_cluster_size: int = 10,
         min_samples: Union[int, bool] = None,
         reduction_dims: Union[int, float] = 0,
@@ -56,6 +56,8 @@ class ClusterTopics:
         keep_outliers: bool = False,
         n_jobs: int = 6,
     ):
+        """This class takes a list of sentences and clusters them using embeddings."""
+
         self.embedding_model = embedding_model or settings.LOCAL_EMBEDDING_MODEL
         self.min_cluster_size = min_cluster_size
         self.min_samples = min_samples or round(math.sqrt(self.min_cluster_size))
@@ -92,8 +94,6 @@ class ClusterTopics:
         # Need to build embeddings
         if self.embedding_model == "openai":
             return get_openai_embeddings(sentences, n_jobs=self.n_jobs)
-        elif self.embedding_model == "palm":
-            return get_palm_embeddings(sentences, n_jobs=self.n_jobs)
 
         else:
             self.embedding_model = settings.LOCAL_EMBEDDING_MODEL
@@ -448,7 +448,14 @@ class ClusterTopics:
         self.labels[outliers_idx] = labels_idx
 
     def fit(self, corpus: List[str], top_n: int = 5) -> tuple:
-        """This is the main fitting function that does all the work."""
+        """This is the main fitting function that does all the work.
+        
+        Args:
+            corpus (List[str]): A list of sentences to cluster.
+            top_n (int, optional): The number of ngrams to use for cluster labels. Defaults to 5.
+        
+        Returns:
+            tuple: A tuple of the cluster labels and text labels."""
 
         self.corpus = np.array(corpus)
 

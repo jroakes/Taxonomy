@@ -1,3 +1,5 @@
+"""NLP functions for SEO."""
+
 from typing import List, Union
 import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer
