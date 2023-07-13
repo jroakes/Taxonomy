@@ -33,7 +33,10 @@ class ClassTfidfTransformer(TfidfTransformer):
     transformer = ClassTfidfTransformer()
     ```
     """
-    def __init__(self, bm25_weighting: bool = False, reduce_frequent_words: bool = False):
+
+    def __init__(
+        self, bm25_weighting: bool = False, reduce_frequent_words: bool = False
+    ):
         self.bm25_weighting = bm25_weighting
         self.reduce_frequent_words = reduce_frequent_words
         super(ClassTfidfTransformer, self).__init__()
@@ -45,7 +48,7 @@ class ClassTfidfTransformer(TfidfTransformer):
             X: A matrix of term/token counts.
             multiplier: A multiplier for increasing/decreasing certain IDF scores
         """
-        X = check_array(X, accept_sparse=('csr', 'csc'))
+        X = check_array(X, accept_sparse=("csr", "csc"))
         if not sp.issparse(X):
             X = sp.csr_matrix(X)
         dtype = np.float64
@@ -61,21 +64,24 @@ class ClassTfidfTransformer(TfidfTransformer):
 
             # BM25-inspired weighting procedure
             if self.bm25_weighting:
-                idf = np.log(1+((avg_nr_samples - df + 0.5) / (df+0.5)))
+                idf = np.log(1 + ((avg_nr_samples - df + 0.5) / (df + 0.5)))
 
             # Divide the average number of samples by the word frequency
             # +1 is added to force values to be positive
             else:
-                idf = np.log((avg_nr_samples / df)+1)
+                idf = np.log((avg_nr_samples / df) + 1)
 
             # Multiplier to increase/decrease certain idf scores
             if multiplier is not None:
                 idf = idf * multiplier
 
-            self._idf_diag = sp.diags(idf, offsets=0,
-                                      shape=(n_features, n_features),
-                                      format='csr',
-                                      dtype=dtype)
+            self._idf_diag = sp.diags(
+                idf,
+                offsets=0,
+                shape=(n_features, n_features),
+                format="csr",
+                dtype=dtype,
+            )
 
         return self
 
@@ -89,7 +95,7 @@ class ClassTfidfTransformer(TfidfTransformer):
             X (sparse matrix): A c-TF-IDF matrix
         """
         if self.use_idf:
-            X = normalize(X, axis=1, norm='l1', copy=False)
+            X = normalize(X, axis=1, norm="l1", copy=False)
 
             if self.reduce_frequent_words:
                 X.data = np.sqrt(X.data)

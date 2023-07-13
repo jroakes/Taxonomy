@@ -30,7 +30,7 @@ MAX_SAMPLES = 1000
 
 # Search Console Drive
 SERVICE_ACCOUNT_CREDENTIALS = "service.credentials.json"
-SERVICE_ACCOUNT_SCOPES = ['https://www.googleapis.com/auth/webmasters.readonly']
+SERVICE_ACCOUNT_SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
 SERVICE_ACCOUNT_SUBJECT = "clients@locomotive.agency"
 
 

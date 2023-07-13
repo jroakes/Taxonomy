@@ -57,8 +57,8 @@ def get_openai_response(
             model=model,
             messages=messages,
             request_timeout=settings.OPENAI_REQUEST_TIMEOUT,
-            max_tokens = 6000 if '-16k' in model else 2000,
-            temperature = 0.0,
+            max_tokens=6000 if "-16k" in model else 2000,
+            temperature=0.0,
             n=1,
         )
 
@@ -92,49 +92,68 @@ def get_openai_response_chat(
         raise APIError(str(e))
 
 
-
-def get_openai_embeddings(texts: List[str], 
-                          model: str = settings.OPENAI_EMBEDDING_MODEL,
-                          n_jobs: int = settings.MAX_WORKERS) -> np.ndarray:
+def get_openai_embeddings(
+    texts: List[str],
+    model: str = settings.OPENAI_EMBEDDING_MODEL,
+    n_jobs: int = settings.MAX_WORKERS,
+) -> np.ndarray:
     """Get embeddings from OpenAI's API."""
 
-    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(settings.API_RETRY_ATTEMPTS))
+    @retry(
+        wait=wait_random_exponential(min=1, max=60),
+        stop=stop_after_attempt(settings.API_RETRY_ATTEMPTS),
+    )
     def get_single_embedding(text: str, model: str) -> np.ndarray:
-        return np.asarray(openai.Embedding.create(input = [text], model=model)['data'][0]['embedding'])
+        return np.asarray(
+            openai.Embedding.create(input=[text], model=model)["data"][0]["embedding"]
+        )
 
     # Multi-thread with concurrent.futures and return in same order as texts
     embeddings_lookup = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=n_jobs) as executor:
-        futures = {executor.submit(get_single_embedding, text, model): text for text in texts}
+        futures = {
+            executor.submit(get_single_embedding, text, model): text for text in texts
+        }
 
-        for future in tqdm(concurrent.futures.as_completed(futures), desc="Getting OpenAI Embeddings", total=len(futures)):
+        for future in tqdm(
+            concurrent.futures.as_completed(futures),
+            desc="Getting OpenAI Embeddings",
+            total=len(futures),
+        ):
             embeddings_lookup[futures[future]] = future.result()
-    
 
     return np.asarray([embeddings_lookup[text] for text in texts])
 
 
-
-def get_palm_embeddings(texts: List[str], 
-                        model: str = settings.PALM_EMBEDDING_MODEL,
-                        n_jobs: int = settings.MAX_WORKERS) -> np.ndarray:
+def get_palm_embeddings(
+    texts: List[str],
+    model: str = settings.PALM_EMBEDDING_MODEL,
+    n_jobs: int = settings.MAX_WORKERS,
+) -> np.ndarray:
     """Get embeddings from PALM's API."""
 
-    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(settings.API_RETRY_ATTEMPTS))
+    @retry(
+        wait=wait_random_exponential(min=1, max=60),
+        stop=stop_after_attempt(settings.API_RETRY_ATTEMPTS),
+    )
     def get_single_embedding(text: str, model: str) -> np.ndarray:
         return np.asarray(palm.generate_embeddings(model, text))
 
     # Multi-thread with concurrent.futures and return in same order as texts
     embeddings_lookup = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=n_jobs) as executor:
-        futures = {executor.submit(get_single_embedding, text, model): text for text in texts}
+        futures = {
+            executor.submit(get_single_embedding, text, model): text for text in texts
+        }
 
-        for future in tqdm(concurrent.futures.as_completed(futures), desc="Getting Palm Embeddings", total=len(futures)):
+        for future in tqdm(
+            concurrent.futures.as_completed(futures),
+            desc="Getting Palm Embeddings",
+            total=len(futures),
+        ):
             embeddings_lookup[futures[future]] = future.result()
 
-
     return np.asarray([embeddings_lookup[text] for text in texts])
-
 
 
 @retry(
@@ -142,22 +161,19 @@ def get_palm_embeddings(texts: List[str],
     stop=stop_after_attempt(settings.API_RETRY_ATTEMPTS),
 )
 def get_palm_response(prompt: str, model: str = settings.PALM_MODEL) -> str:
-
     safety_settings = [
         {
-            "category": getattr(
-                safety_types.HarmCategory, f"HARM_CATEGORY_{category}"
-            ),
+            "category": getattr(safety_types.HarmCategory, f"HARM_CATEGORY_{category}"),
             "threshold": safety_types.HarmBlockThreshold.BLOCK_NONE,
         }
         for category in [
-                "DEROGATORY",
-                "TOXICITY",
-                "SEXUAL",
-                "VIOLENCE",
-                "DANGEROUS",
-                "MEDICAL",
-            ]
+            "DEROGATORY",
+            "TOXICITY",
+            "SEXUAL",
+            "VIOLENCE",
+            "DANGEROUS",
+            "MEDICAL",
+        ]
     ]
 
     completion = palm.generate_text(
@@ -165,10 +181,7 @@ def get_palm_response(prompt: str, model: str = settings.PALM_MODEL) -> str:
         prompt=prompt,
         temperature=0,
         max_output_tokens=1024,
-        safety_settings=safety_settings
+        safety_settings=safety_settings,
     )
 
     return completion.result
-
-
-

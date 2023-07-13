@@ -26,7 +26,7 @@ def get_structure(text: str) -> List[str]:
             continue
         depth = len(line) - len(line.lstrip())
         indents.append(depth)
-    
+
     # Convert indents to levels
     indents = sorted(list(set(indents)))
     levels = {indents[i]: i for i in range(len(indents))}
@@ -50,34 +50,41 @@ def plot_knee(df: pd.DataFrame, col_name: str = "score", S: int = 100):
     """Plot line graph with knee locations marked with s=0 and s with provided value."""
 
     from matplotlib import pyplot as plt
-    
-    kneedle_given = KneeLocator(range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing", S=S)
-    kneedle_base = KneeLocator(range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing")
-    
+
+    kneedle_given = KneeLocator(
+        range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing", S=S
+    )
+    kneedle_base = KneeLocator(
+        range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing"
+    )
+
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(df[col_name])
     ax.axvline(kneedle_base.knee, color="red", linestyle="--", label="knee")
     ax.axvline(kneedle_given.knee, color="green", linestyle="--", label=f"knee (S={S})")
-    
+
     ax.set_title(f"Knee plot for {col_name}")
     ax.set_xlabel("ngram")
     ax.set_ylabel(col_name)
     ax.legend()
     plt.show()
-    
 
 
-def filter_knee(df: pd.DataFrame, col_name: str = "score", S: int = 100) -> pd.DataFrame:
+def filter_knee(
+    df: pd.DataFrame, col_name: str = "score", S: int = 100
+) -> pd.DataFrame:
     """Filter dataframe to only include rows up to the knee."""
-    
-    kneedle = KneeLocator(range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing", S=S)
+
+    kneedle = KneeLocator(
+        range(1, len(df) + 1), df[col_name], curve="convex", direction="decreasing", S=S
+    )
 
     if kneedle.knee is None:
         return df
     else:
         logger.info(f"Knee found at {kneedle.knee} with S={S}")
-    
-    df_knee = df.iloc[:kneedle.knee]
+
+    df_knee = df.iloc[: kneedle.knee]
 
     return df_knee
 
@@ -87,13 +94,18 @@ def merge_ngrams(df: pd.DataFrame):
     ngram_dict = {}
 
     # Get the range of ngram sizes
-    ngram_range = (df["feature"].str.split().str.len().min(), df["feature"].str.split().str.len().max())
+    ngram_range = (
+        df["feature"].str.split().str.len().min(),
+        df["feature"].str.split().str.len().max(),
+    )
 
     # Build a dict of ngrams and their scores for each ngram size
     for ngram_size in range(ngram_range[0], ngram_range[1] + 1):
         ngram_mask = df["feature"].str.split().str.len() == ngram_size
         ngrams_df = df[ngram_mask]
-        ngram_dict[ngram_size] = {row.feature: row.frequency for row in ngrams_df.itertuples()}
+        ngram_dict[ngram_size] = {
+            row.feature: row.frequency for row in ngrams_df.itertuples()
+        }
 
     # Loop over the ngram sizes from smallest to largest
     for ngram_size in range(ngram_range[0], ngram_range[1]):
@@ -102,15 +114,24 @@ def merge_ngrams(df: pd.DataFrame):
 
         # Loop over the ngrams of the current size
         for merge_candidate, merge_candidate_score in merge_candidates.items():
-
             # Get only the merge_into_candidates with score less than or equal to merge_candidate_score
-            merge_into_candidates_reduced = {k: v for k, v in merge_into_candidates.items() if v <= merge_candidate_score and all(term in k.split() for term in merge_candidate.split())}
+            merge_into_candidates_reduced = {
+                k: v
+                for k, v in merge_into_candidates.items()
+                if v <= merge_candidate_score
+                and all(term in k.split() for term in merge_candidate.split())
+            }
 
             # Loop over the larger ngrams
-            for merge_into_candidate, merge_into_candidate_score in merge_into_candidates_reduced.items():
-
+            for (
+                merge_into_candidate,
+                merge_into_candidate_score,
+            ) in merge_into_candidates_reduced.items():
                 # Create ngrams of the merge_into_candidate the same size as the merge_candidate
-                merge_into_candidate_ngrams = [" ".join(n) for n in ngrams(merge_into_candidate.split(), ngram_size)]
+                merge_into_candidate_ngrams = [
+                    " ".join(n)
+                    for n in ngrams(merge_into_candidate.split(), ngram_size)
+                ]
 
                 if merge_candidate in merge_into_candidate_ngrams:
                     # Reduce the score of the smaller ngram by the score of the larger ngram
@@ -127,20 +148,33 @@ def merge_ngrams(df: pd.DataFrame):
         ngram_dict[ngram_size] = merge_candidates
 
     # Convert the dictionary back to a DataFrame
-    df_out = pd.DataFrame([(k, sub_k, sub_v) for k, v in ngram_dict.items() for sub_k, sub_v in v.items()], columns=['ngram_size', 'feature', 'merged_frequency'])
+    df_out = pd.DataFrame(
+        [
+            (k, sub_k, sub_v)
+            for k, v in ngram_dict.items()
+            for sub_k, sub_v in v.items()
+        ],
+        columns=["ngram_size", "feature", "merged_frequency"],
+    )
 
     df_out = df_out.merge(df, on="feature", how="left")
 
     df_out["frequency"] = df_out["frequency"] / df_out["frequency"].max()
-    df_out["merged_frequency"] = df_out["merged_frequency"] / df_out["merged_frequency"].max()
+    df_out["merged_frequency"] = (
+        df_out["merged_frequency"] / df_out["merged_frequency"].max()
+    )
 
     # sort by score and reset index
-    df_out = df_out.sort_values(by=["merged_frequency"], ascending=False).reset_index(drop=True)
+    df_out = df_out.sort_values(by=["merged_frequency"], ascending=False).reset_index(
+        drop=True
+    )
 
     return df_out
 
 
-def get_ngram_frequency(texts: List[str], ngram_range: tuple = (1, 6), min_df: int = 2) -> pd.DataFrame:
+def get_ngram_frequency(
+    texts: List[str], ngram_range: tuple = (1, 6), min_df: int = 2
+) -> pd.DataFrame:
     """Get ngram frequency from a dataframe."""
 
     # Find counts for each query
@@ -153,7 +187,9 @@ def get_ngram_frequency(texts: List[str], ngram_range: tuple = (1, 6), min_df: i
     scores = cv_matrix.sum(axis=0).tolist()[0]
 
     # Create a dataframe of feature names and frequency
-    df_cv = pd.DataFrame(list(zip(feature_names, scores)), columns=["feature", "frequency"])
+    df_cv = pd.DataFrame(
+        list(zip(feature_names, scores)), columns=["feature", "frequency"]
+    )
 
     # Keep only features with > 2 characters
     df_cv = df_cv[df_cv["feature"].str.len() > 2].copy()
@@ -164,21 +200,22 @@ def get_ngram_frequency(texts: List[str], ngram_range: tuple = (1, 6), min_df: i
     return df_cv
 
 
-
-def clean_gsc_dataframe(df: pd.DataFrame, 
-                        brand_terms: Union[List[str], None] = None, 
-                        limit_queries: Union[int, None] = None) -> pd.DataFrame:
+def clean_gsc_dataframe(
+    df: pd.DataFrame,
+    brand_terms: Union[List[str], None] = None,
+    limit_queries: Union[int, None] = None,
+) -> pd.DataFrame:
     """Clean up the GSC dataframe."""
 
-    df['original_query'] = df['query'].copy()
+    df["original_query"] = df["query"].copy()
 
-    df['query'] = df['query'].str.lower()
+    df["query"] = df["query"].str.lower()
 
     # Remove non-english characters from query
-    df['query'] = df['query'].str.replace(r'[^a-zA-Z0-9\s]', '')
+    df["query"] = df["query"].str.replace(r"[^a-zA-Z0-9\s]", "")
 
     # Trim whitespace from query
-    df['query'] = df['query'].str.strip()
+    df["query"] = df["query"].str.strip()
 
     # Remove rows where query is at least 3 characters
     df = df[df["query"].str.len() >= 3].copy()
@@ -189,11 +226,14 @@ def clean_gsc_dataframe(df: pd.DataFrame,
     if brand_terms:
         # Split brand into terms
         brand_terms = [b.lower().strip() for b in brand_terms]
-        df["query"] = df["query"].apply(lambda x: ' '.join([word for word in x.split(' ') if word.lower() not in (brand_terms)]))
-
+        df["query"] = df["query"].apply(
+            lambda x: " ".join(
+                [word for word in x.split(" ") if word.lower() not in (brand_terms)]
+            )
+        )
 
     # Sort by clicks and impressions descending
-    df = df.sort_values(by=['clicks', 'search_volume'], ascending=False)
+    df = df.sort_values(by=["clicks", "search_volume"], ascending=False)
 
     # Keep only the first 5 queries for each page. This is to avoid pages with a lot of queries from dominating the data
     if limit_queries:
@@ -202,25 +242,30 @@ def clean_gsc_dataframe(df: pd.DataFrame,
     return df
 
 
-def clean_provided_dataframe(df: pd.DataFrame, 
-                             brand_terms: Union[List[str], None] = None,
-                             limit_queries: Union[int, None] = None) -> pd.DataFrame:
-
+def clean_provided_dataframe(
+    df: pd.DataFrame,
+    brand_terms: Union[List[str], None] = None,
+    limit_queries: Union[int, None] = None,
+) -> pd.DataFrame:
     # Remove other columns
-    if 'page' in df.columns:
+    if "page" in df.columns:
         df = df[["query", "page", "search_volume"]].copy()
     else:
         df = df[["query", "search_volume"]].copy()
 
-    df['original_query'] = df['query'].copy()
+    df["original_query"] = df["query"].copy()
 
     if brand_terms:
         # Split brand into terms
         brand_terms = [b.lower().strip() for b in brand_terms]
-        df.loc[:, "query"] = df["query"].apply(lambda x: ' '.join([word for word in x.split(' ') if word.lower() not in (brand_terms)]))
+        df.loc[:, "query"] = df["query"].apply(
+            lambda x: " ".join(
+                [word for word in x.split(" ") if word.lower() not in (brand_terms)]
+            )
+        )
 
     # Remove non-english characters from query using regex: [^a-zA-Z0-9\s]
-    df.loc[:, "query"] = df["query"].str.replace(r'[^a-zA-Z0-9\s]', '')
+    df.loc[:, "query"] = df["query"].str.replace(r"[^a-zA-Z0-9\s]", "")
 
     # Trim whitespace from query
     df.loc[:, "query"] = df["query"].str.strip()
@@ -235,7 +280,7 @@ def clean_provided_dataframe(df: pd.DataFrame,
     df = df[df["search_volume"].notna()]
 
     # Sort by clicks and impressions descending
-    df = df.sort_values(by=['search_volume'], ascending=False)
+    df = df.sort_values(by=["search_volume"], ascending=False)
 
     # Keep only the first 5 queries for each page. This is to avoid pages with a lot of queries from dominating the data
     if limit_queries:
@@ -244,41 +289,34 @@ def clean_provided_dataframe(df: pd.DataFrame,
     return df
 
 
-
-
-
 def convert_language(name: str) -> Union[str, None]:
-
     fn = "https://raw.githubusercontent.com/datasets/language-codes/master/data/language-codes.csv"
     df = pd.read_csv(fn)
-    df.columns = ['code', 'name']
-    df['name'] = df['name'].map(lambda x: x.split(";")[0].strip())
-    df['name'] = df['name'].str.lower().str.strip()
+    df.columns = ["code", "name"]
+    df["name"] = df["name"].map(lambda x: x.split(";")[0].strip())
+    df["name"] = df["name"].str.lower().str.strip()
 
     # Get language code
-    if name.lower() in df['name'].tolist():
-        return df[df['name'] == name.lower()]['code'].tolist()[0]
-    
+    if name.lower() in df["name"].tolist():
+        return df[df["name"] == name.lower()]["code"].tolist()[0]
+
     return None
 
 
-
 def convert_country(name: str) -> Union[str, None]:
-
     fn = "https://raw.githubusercontent.com/lukes/ISO-3166-Countries-with-Regional-Codes/master/all/all.csv"
-    df = pd.read_csv(fn)[['name', 'alpha-2']]
-    df.columns = ['name', 'code']
+    df = pd.read_csv(fn)[["name", "alpha-2"]]
+    df.columns = ["name", "code"]
     # remove parenthesis
-    df['name'] = df['name'].map(lambda x: x.split("(")[0].strip())
-    df['name'] = df['name'].str.lower().str.strip()
+    df["name"] = df["name"].map(lambda x: x.split("(")[0].strip())
+    df["name"] = df["name"].str.lower().str.strip()
 
     # Match name if in name series
-    if name.lower() in df['name'].tolist():
-        return df[df['name'] == name.lower()]['code'].tolist()[0]
-    
+    if name.lower() in df["name"].tolist():
+        return df[df["name"] == name.lower()]["code"].tolist()[0]
+
     # Match name if part of strings in name series
-    if df[df['name'].str.contains(name.lower())].shape[0] > 0:
-        return df[df['name'].str.contains(name.lower())]['code'].tolist()[0]
-    
-    
+    if df[df["name"].str.contains(name.lower())].shape[0] > 0:
+        return df[df["name"].str.contains(name.lower())]["code"].tolist()[0]
+
     return None

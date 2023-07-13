@@ -1,25 +1,34 @@
+"""Main module for taxonomy creation."""
 
 from typing import Union, List
 from sentence_transformers import CrossEncoder
 from collections import OrderedDict
 import pandas as pd
 from lib.searchconsole import load_gsc_account_data, load_available_gsc_accounts
-from lib.nlp import clean_gsc_dataframe, clean_provided_dataframe, get_ngram_frequency, merge_ngrams, filter_knee, get_structure
-from lib.api import get_openai_response_chat, get_palm_response
-from lib.prompts import PROMPT_TEMPLATE_TAXONOMY, PROMPT_TEMPLATE_TAXONOMY_16k, PROMPT_TEMPLATE_TAXONOMY_REVIEW
+from lib.nlp import (
+    clean_gsc_dataframe,
+    clean_provided_dataframe,
+    get_ngram_frequency,
+    merge_ngrams,
+    filter_knee,
+    get_structure,
+)
+from lib.api import get_openai_response_chat, APIError
+from lib.prompts import PROMPT_TEMPLATE_TAXONOMY, PROMPT_TEMPLATE_TAXONOMY_REVIEW
 from lib.utils import create_tuples
 from lib.clustering import ClusterTopics
 from loguru import logger
 import settings
 
 
-
-def get_data(data: Union[str,pd.DataFrame],
-             text_column: str = None,
-             search_volume_column: str = None,
-             days: int = 30, 
-             brand_terms: Union[List[str], None] = None, 
-             limit_queries: Union[int, None] = None) -> pd.DataFrame:
+def get_data(
+    data: Union[str, pd.DataFrame],
+    text_column: str = None,
+    search_volume_column: str = None,
+    days: int = 30,
+    brand_terms: Union[List[str], None] = None,
+    limit_queries: Union[int, None] = None,
+) -> pd.DataFrame:
     """Get data from Google Search Console or a pandas dataframe."""
 
     df = pd.DataFrame()
@@ -30,7 +39,9 @@ def get_data(data: Union[str,pd.DataFrame],
 
         if df is None:
             df_accounts = load_available_gsc_accounts()
-            accounts = df_accounts[df_accounts["property"].str.contains(data)]["property"].tolist()
+            accounts = df_accounts[df_accounts["property"].str.contains(data)][
+                "property"
+            ].tolist()
             if len(accounts) == 0:
                 raise AttributeError(f"No GSC account found for: {data}")
             elif len(accounts) > 1:
@@ -43,10 +54,7 @@ def get_data(data: Union[str,pd.DataFrame],
 
         df = clean_gsc_dataframe(df, brand_terms, limit_queries)
 
-
-
     elif isinstance(data, pd.DataFrame) or isinstance(data, str) and (".csv" in data):
-
         if isinstance(data, str) and (".csv" in data):
             df = pd.read_csv(data)
         else:
@@ -54,22 +62,30 @@ def get_data(data: Union[str,pd.DataFrame],
 
         if text_column is None:
             text_column = input("What is the name of the column with the queries? ")
-        
+
         if search_volume_column is None:
-            search_volume_column = input("What is the name of the column with the search volume? ")
-        
+            search_volume_column = input(
+                "What is the name of the column with the search volume? "
+            )
+
         # Rename columns
-        df = df.rename(columns={text_column: "query", search_volume_column: "search_volume"})
+        df = df.rename(
+            columns={text_column: "query", search_volume_column: "search_volume"}
+        )
 
         # Check if there is a column that contains URLs in the rows
-        url_columns = [c for c in df.columns if df[c].dtype == 'object' and df.head(10)[c].str.match(r"https?://").all()]
+        url_columns = [
+            c
+            for c in df.columns
+            if df[c].dtype == "object" and df.head(10)[c].str.match(r"https?://").all()
+        ]
 
         if len(url_columns) == 1:
             logger.info(f"Found URL column: {url_columns[0]}.")
             df = df.rename(columns={url_columns[0]: "page"})
         else:
             limit_queries = None
-       
+
         # Save original dataframe
         df_original = df.copy()
 
@@ -77,18 +93,23 @@ def get_data(data: Union[str,pd.DataFrame],
         df = clean_provided_dataframe(df, brand_terms, limit_queries)
 
     else:
-        raise ValueError("Data must be a GSC Property, CSV Filename, or pandas dataframe.")
-
+        raise ValueError(
+            "Data must be a GSC Property, CSV Filename, or pandas dataframe."
+        )
 
     return df, df_original
 
 
-def score_and_filter_df(df: pd.DataFrame,
-                        ngram_range: tuple = (1, 6),
-                        min_df: int = 2,) -> pd.DataFrame:
+def score_and_filter_df(
+    df: pd.DataFrame,
+    ngram_range: tuple = (1, 6),
+    min_df: int = 2,
+) -> pd.DataFrame:
     """Score and filter dataframe."""
 
-    df_ngram = get_ngram_frequency(df['query'].tolist(), ngram_range=ngram_range, min_df=min_df)
+    df_ngram = get_ngram_frequency(
+        df["query"].tolist(), ngram_range=ngram_range, min_df=min_df
+    )
     logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
 
     df_ngram = merge_ngrams(df_ngram)
@@ -101,13 +122,19 @@ def score_and_filter_df(df: pd.DataFrame,
         t = text.lower().split(" ")
         lt = longer_text.lower().split(" ")
         return all([x in lt for x in t])
-    
-    df_ngram["search_volume"] = df_ngram["query"].apply(lambda x: df[df["query"].apply(lambda y: match_all_terms(x, y))]["search_volume"].sum())
+
+    df_ngram["search_volume"] = df_ngram["query"].apply(
+        lambda x: df[df["query"].apply(lambda y: match_all_terms(x, y))][
+            "search_volume"
+        ].sum()
+    )
 
     # Normalize the columns: search_volume
-    df_ngram["search_volume"] = df_ngram["search_volume"] / df_ngram["search_volume"].max()
+    df_ngram["search_volume"] = (
+        df_ngram["search_volume"] / df_ngram["search_volume"].max()
+    )
 
-    #Update score column to be the average of the normalized column
+    # Update score column to be the average of the normalized column
     df_ngram["score"] = df_ngram[["search_volume", "merged_frequency"]].mean(axis=1)
 
     # Sort by score
@@ -115,12 +142,10 @@ def score_and_filter_df(df: pd.DataFrame,
 
     df_ngram = df_ngram.reset_index(drop=True)
 
-
     if len(df_ngram) <= settings.MAX_SAMPLES:
         logger.info(f"Final score and filter length: {len(df_ngram)}")
         print(df_ngram.head())
         return df_ngram
-    
 
     df_knee = None
     S = settings.MAX_SAMPLES
@@ -129,8 +154,10 @@ def score_and_filter_df(df: pd.DataFrame,
     while df_knee is None or len(df_knee) > settings.MAX_SAMPLES:
         df_knee = filter_knee(df_ngram.copy(), col_name="score", S=S)
         S -= 25
-    
-    logger.info(f"Filtered Knee (sensitivity={int(S+25)}). Dataframe shape: {df_knee.shape}")
+
+    logger.info(
+        f"Filtered Knee (sensitivity={int(S+25)}). Dataframe shape: {df_knee.shape}"
+    )
 
     return df_knee
 
@@ -143,21 +170,23 @@ class PromptLengthError(Exception):
         super().__init__(self.message)
 
 
-
-
-def create_taxonomy(data: Union[str, pd.DataFrame],
-                    website_subject: str = "",
-                    text_column: str = None,
-                    search_volume_column: str = None,
-                    cluster_embeddings_model: Union[str, None] = "local", # "palm", "openai", or "local"
-                    min_cluster_size: int = 10,
-                    min_samples: int = 3,
-                    days: int = 30,
-                    ngram_range: tuple = (1, 5),
-                    min_df: int = 5,
-                    brand_terms: List[str] = None,
-                    limit_queries_per_page: int = 5,
-                    debug_responses: bool = False):
+def create_taxonomy(
+    data: Union[str, pd.DataFrame],
+    website_subject: str = "",
+    text_column: str = None,
+    search_volume_column: str = None,
+    cluster_embeddings_model: Union[
+        str, None
+    ] = "local",  # "palm", "openai", or "local"
+    min_cluster_size: int = 10,
+    min_samples: int = 3,
+    days: int = 30,
+    ngram_range: tuple = (1, 5),
+    min_df: int = 5,
+    brand_terms: List[str] = None,
+    limit_queries_per_page: int = 5,
+    debug_responses: bool = False,
+):
     """Kickoff function to create taxonomy from GSC data.
 
     Args:
@@ -180,38 +209,52 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
     """
 
     # Get data
-    df, df_original = get_data(data, text_column, search_volume_column, days, brand_terms, limit_queries_per_page)
+    df, df_original = get_data(
+        data,
+        text_column,
+        search_volume_column,
+        days,
+        brand_terms,
+        limit_queries_per_page,
+    )
     logger.info(f"Got Data. Dataframe shape: {df.shape}")
-
 
     logger.info("Filtering Query Data.")
     df_ngram = score_and_filter_df(df, ngram_range=ngram_range, min_df=min_df)
     logger.info(f"Got ngram frequency. Dataframe shape: {df_ngram.shape}")
-    query_data = df_ngram.head(settings.MAX_SAMPLES)[['query', 'score']].to_markdown(index=None)
+    query_data = df_ngram.head(settings.MAX_SAMPLES)[["query", "score"]].to_markdown(
+        index=None
+    )
 
-    logger.info(f"Got samples. Number of samples: {len(query_data)}")
+    logger.info(f"Got query data as markdown. Length: {len(query_data)}")
     brand_terms = ", ".join(brand_terms) if brand_terms else ""
-    
-    prompt = PROMPT_TEMPLATE_TAXONOMY_16k.format(subject=website_subject, query_data=query_data, brand_terms=brand_terms)
+
+    prompt = PROMPT_TEMPLATE_TAXONOMY.format(
+        subject=website_subject, query_data=query_data, brands=brand_terms
+    )
 
     logger.info("Using OpenAI API.")
     response = get_openai_response_chat(prompt, model=settings.OPENAI_LARGE_MODEL)
 
     logger.info("Reviewing OpenAI's work.")
-    prompt = PROMPT_TEMPLATE_TAXONOMY_REVIEW.format(taxonomy=response, brands=brand_terms)
-    reviewed_response = get_openai_response_chat(prompt)
+    prompt = PROMPT_TEMPLATE_TAXONOMY_REVIEW.format(
+        taxonomy=response, brands=brand_terms
+    )
+    reviewed_response = get_openai_response_chat(
+        prompt, model=settings.OPENAI_LARGE_MODEL
+    )
 
     if not response or not reviewed_response:
         logger.error("No response from API.")
         return None
-    
+
     if debug_responses:
         logger.info("Debugging responses.")
-        logger.info('Initial response:')
+        logger.info("Initial response:")
         logger.info(response)
-        logger.info('Reviewed response:')
+        logger.info("Reviewed response:")
         logger.info(reviewed_response)
-    
+
     # Get structure
     logger.info("Getting structure.")
     structure = get_structure(reviewed_response)
@@ -221,54 +264,58 @@ def create_taxonomy(data: Union[str, pd.DataFrame],
 
     df = df_original if len(df_original) > 0 else df
 
-    df = add_categories_clustered(structure, df, 
-                                 cluster_embeddings_model = cluster_embeddings_model,
-                                 min_cluster_size = min_cluster_size,
-                                 min_samples = min_samples)
-
+    df = add_categories_clustered(
+        structure,
+        df,
+        cluster_embeddings_model=cluster_embeddings_model,
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+    )
 
     logger.info("Done.")
 
     return structure, df, query_data
 
 
-
-
-def add_categories_clustered(structure: List[str], df: pd.DataFrame, 
-                             cluster_embeddings_model: Union[str, None] = None,
-                             min_cluster_size: int = 5,
-                             min_samples: int = 2,
-                             match_col: str = "query") -> pd.DataFrame:
-    
+def add_categories_clustered(
+    structure: List[str],
+    df: pd.DataFrame,
+    cluster_embeddings_model: Union[str, None] = None,
+    min_cluster_size: int = 5,
+    min_samples: int = 2,
+    match_col: str = "query",
+) -> pd.DataFrame:
     """Add categories to dataframe."""
     texts = df[match_col].tolist()
     structure_parts = [" ".join(s.split(" > ")[-1:]) for s in structure]
-    structure_map = {p:s for p, s in zip(structure_parts, structure)}
-    if '<outliers>' not in structure_map:
-        structure_map['<outliers>'] = 'Miscellaneous'
+    structure_map = {p: s for p, s in zip(structure_parts, structure)}
+    if "<outliers>" not in structure_map:
+        structure_map["<outliers>"] = "Miscellaneous"
 
     model = ClusterTopics(
-            embedding_model = cluster_embeddings_model,
-            min_cluster_size =  min_cluster_size,
-            min_samples = min_samples,
-            reduction_dims = 2,
-            cluster_model = "hdbscan",
-            cluster_categories = structure_parts,
-            keep_outliers = True,
-            n_jobs = 3,
-        )
-
+        embedding_model=cluster_embeddings_model,
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+        reduction_dims=2,
+        cluster_model="hdbscan",
+        cluster_categories=structure_parts,
+        keep_outliers=True,
+        n_jobs=3,
+    )
 
     labels, text_labels = model.fit(texts)
-    label_lookup = {text: structure_map[label] for text, label in zip(texts, text_labels)}
-    df['taxonomy'] = df[match_col].map(label_lookup)
+    label_lookup = {
+        text: structure_map[label] for text, label in zip(texts, text_labels)
+    }
+    df["taxonomy"] = df[match_col].map(label_lookup)
 
     return df
 
 
 # Need to update this to use a new cross-encoder model with better embeddings
-def add_categories_cross_encoded(structure:List[str], df: pd.DataFrame,
-                                 match_col: str = "query") -> pd.DataFrame:
+def add_categories_cross_encoded(
+    structure: List[str], df: pd.DataFrame, match_col: str = "query"
+) -> pd.DataFrame:
     """Add categories to dataframe."""
 
     logger.info("Finding Categories")
@@ -278,8 +325,10 @@ def add_categories_cross_encoded(structure:List[str], df: pd.DataFrame,
     taxonomies = structure.copy()
 
     # Use ordered dict to keep only unique terms of t.split(" > ") in taxonomies.
-    categories = [" ".join(OrderedDict.fromkeys(t.split(" > ")).keys()) for t in taxonomies]
-    
+    categories = [
+        " ".join(OrderedDict.fromkeys(t.split(" > ")).keys()) for t in taxonomies
+    ]
+
     model = CrossEncoder(settings.CROSSENCODER_MODEL_NAME, max_length=256)
 
     compare_pairs = create_tuples(categories, queries)
@@ -288,24 +337,30 @@ def add_categories_cross_encoded(structure:List[str], df: pd.DataFrame,
 
     scores = model.predict(compare_pairs, batch_size=128)
 
-    df_category = pd.DataFrame({"scores": scores,
-                                "categories": [s[0] for s in compare_pairs],
-                                "queries": [s[1] for s in compare_pairs]})
+    df_category = pd.DataFrame(
+        {
+            "scores": scores,
+            "categories": [s[0] for s in compare_pairs],
+            "queries": [s[1] for s in compare_pairs],
+        }
+    )
 
     df_category.sort_values(by="scores", ascending=False, inplace=True)
 
     # This assigns the most similar category to each query
-    df_category = df_category.groupby(["queries"], as_index=False).agg({'categories': 'first', 'scores': 'first'})
+    df_category = df_category.groupby(["queries"], as_index=False).agg(
+        {"categories": "first", "scores": "first"}
+    )
 
-    df_category.columns = [match_col, 'taxonomy_category', 'similiary_score']
+    df_category.columns = [match_col, "taxonomy_category", "similiary_score"]
 
-    df_category['taxonomy'] = df_category['taxonomy_category'].map(lambda x: taxonomies[categories.index(x)])
+    df_category["taxonomy"] = df_category["taxonomy_category"].map(
+        lambda x: taxonomies[categories.index(x)]
+    )
 
     # drop taxonomy_category
-    df_category.drop(columns=['taxonomy_category'], inplace=True)
+    df_category.drop(columns=["taxonomy_category"], inplace=True)
 
     df_out = df.merge(df_category, on=match_col, how="left")
 
     return df_out
-
-

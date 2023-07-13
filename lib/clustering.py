@@ -18,6 +18,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from kneed import KneeLocator
 import warnings
 from numba.core.errors import NumbaDeprecationWarning
+
 warnings.filterwarnings("ignore", category=NumbaDeprecationWarning)
 
 import umap.umap_ as umap
@@ -38,6 +39,7 @@ import settings
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
 
 # Clustering Class
 class ClusterTopics:
@@ -63,8 +65,10 @@ class ClusterTopics:
 
         self.cluster_categories = cluster_categories
         if cluster_categories:
-            self.cluster_categories = [c for c in filter(len, list(set(cluster_categories)))]
-    
+            self.cluster_categories = [
+                c for c in filter(len, list(set(cluster_categories)))
+            ]
+
         self.use_elbow = use_elbow
         self.keep_outliers = keep_outliers
         self.n_jobs = n_jobs
@@ -77,26 +81,23 @@ class ClusterTopics:
         self.model_data = None
         self.post_process = None
 
-
     def get_embeddings(self, sentences: List[str]) -> np.ndarray:
-
         """Converts text to embeddings"""
 
         # Check if embeddings are already in memory
         if self.embeddings is not None and all([s in self.corpus for s in sentences]):
             idx = [np.where(self.corpus == s)[0][0] for s in sentences]
             return self.embeddings[idx]
-    
+
         # Need to build embeddings
         if self.embedding_model == "openai":
-            return get_openai_embeddings(sentences, n_jobs = self.n_jobs)
+            return get_openai_embeddings(sentences, n_jobs=self.n_jobs)
         elif self.embedding_model == "palm":
-            return get_palm_embeddings(sentences, n_jobs = self.n_jobs)
-        
-        else:
+            return get_palm_embeddings(sentences, n_jobs=self.n_jobs)
 
+        else:
             self.embedding_model = settings.LOCAL_EMBEDDING_MODEL
-            logger.info('Using local embeddings')
+            logger.info("Using local embeddings")
 
             # Only do batching and progress if many embeddings
 
@@ -109,9 +110,7 @@ class ClusterTopics:
 
             return np.asarray(embeddings)
 
-
     def get_reduced(self, embeddings: Union[torch.Tensor, np.ndarray]) -> np.ndarray:
-
         """Reduce dimensions using UMAP. This can reduce clustering time and memory,
         but at the expence of reduced infomration.
         Reducing to 2 dimensions is needed for plotting.
@@ -136,7 +135,6 @@ class ClusterTopics:
         ).fit_transform(embeddings)
 
     def get_elbow(self, embeddings: Union[torch.Tensor, np.ndarray]) -> float:
-
         """Gets the elbow or sorted inflection point of input data as float."""
 
         if self.use_elbow:
@@ -172,9 +170,7 @@ class ClusterTopics:
         """Sets the embeddings for the class"""
         self.embeddings = embeddings
 
-
     def get_cluster_model(self, model_name: Union[str, None] = None) -> None:
-
         """Gets the correct clustering model and sets them up."""
 
         model_name = model_name or self.cluster_model
@@ -182,7 +178,6 @@ class ClusterTopics:
         logger.info("Cluster Model: {}".format(model_name))
 
         if model_name == "hdbscan":
-
             # Normalize embeddings
             self.model_data = self.embeddings / np.linalg.norm(
                 self.embeddings, axis=1, keepdims=True
@@ -196,7 +191,6 @@ class ClusterTopics:
             )
 
         elif model_name == "agglomerative":
-
             # Normalize embeddings
             self.model_data = self.embeddings / np.linalg.norm(
                 self.embeddings, axis=1, keepdims=True
@@ -204,17 +198,24 @@ class ClusterTopics:
 
             # If we want to find the optimal number of clusters.
             # n_clusters = self.find_optimal_clusters_agglomerative(self.embeddings)
-            n_clusters = len(self.cluster_categories) if isinstance(self.cluster_categories, list) else None
-            distance_threshold = float(self.min_samples) if not isinstance(self.cluster_categories, list) else None
-            
+            n_clusters = (
+                len(self.cluster_categories)
+                if isinstance(self.cluster_categories, list)
+                else None
+            )
+            distance_threshold = (
+                float(self.min_samples)
+                if not isinstance(self.cluster_categories, list)
+                else None
+            )
+
             return AgglomerativeClustering(
-                n_clusters= n_clusters,
+                n_clusters=n_clusters,
                 compute_full_tree=True,
                 distance_threshold=distance_threshold,
             )
 
         elif model_name == "optics":
-
             # Normalize embeddings
             self.model_data = self.embeddings / np.linalg.norm(
                 self.embeddings, axis=1, keepdims=True
@@ -233,11 +234,9 @@ class ClusterTopics:
                 "Only `hdbscan`, `optics`, and `agglomerative` are implemented."
             )
 
-
     def top_ngram_embeddings(
         self, top_n: int = 5, min_df: Union[int, float] = 2
     ) -> Union[tuple, None]:
-
         """Returns ngrams by cluster using tfidf and cosine similarity."""
 
         vocabulary = list(set(self.corpus))
@@ -245,53 +244,74 @@ class ClusterTopics:
         results = []
 
         try:
-            vectorizer = CountVectorizer(stop_words="english", ngram_range=(1, 4), min_df=min_df, vocabulary=vocabulary)
-            c_vectorizer = ClassTfidfTransformer(bm25_weighting=True, reduce_frequent_words=True)
+            vectorizer = CountVectorizer(
+                stop_words="english",
+                ngram_range=(1, 4),
+                min_df=min_df,
+                vocabulary=vocabulary,
+            )
+            c_vectorizer = ClassTfidfTransformer(
+                bm25_weighting=True, reduce_frequent_words=True
+            )
             feature_names = vectorizer.get_feature_names_out()
 
             docs = []
             for label in labels:
                 idx = np.where(self.labels == label)[0]
                 docs.append(" ".join(self.corpus[idx]))
-            
+
             X1 = vectorizer.fit_transform(docs)
             X2 = c_vectorizer.fit(X1).transform(X1)
 
             for ldx, label in enumerate(labels):
-
                 tfidf_scores = X2[ldx].toarray().flatten()
-                df = pd.DataFrame(list(zip(feature_names, tfidf_scores)), columns=["feature", "tfidf_score"])
+                df = pd.DataFrame(
+                    list(zip(feature_names, tfidf_scores)),
+                    columns=["feature", "tfidf_score"],
+                )
 
-                tfidf_features = df[df["tfidf_score"] > 0]['feature'].tolist()
+                tfidf_features = df[df["tfidf_score"] > 0]["feature"].tolist()
 
                 if len(tfidf_features) == 0:
-                    results.append({'features': ["<no label found>"], 'embedding': np.zeros(self.embedding_size)})
+                    results.append(
+                        {
+                            "features": ["<no label found>"],
+                            "embedding": np.zeros(self.embedding_size),
+                        }
+                    )
                     continue
 
                 # remove features with zero frequency
                 df = df[df["tfidf_score"] > 0].copy()
 
-                cluster_features = df['feature'].tolist()
+                cluster_features = df["feature"].tolist()
                 embeddings = self.get_embeddings(cluster_features)
 
                 centroid = np.mean(embeddings, axis=0)  # centroid of cluster
 
                 # get cosine similarity of each feature to centroid using iloc
-                df.loc[:, 'sim_score'] = cosine_similarity(embeddings, centroid.reshape(1, -1)).flatten()
+                df.loc[:, "sim_score"] = cosine_similarity(
+                    embeddings, centroid.reshape(1, -1)
+                ).flatten()
 
-                df.loc[:, 'score'] = df['tfidf_score'] * df['sim_score']
+                df.loc[:, "score"] = df["tfidf_score"] * df["sim_score"]
 
                 # sort by score
-                df = df.sort_values(by=['score'], ascending=False).reset_index(drop=True)
+                df = df.sort_values(by=["score"], ascending=False).reset_index(
+                    drop=True
+                )
 
                 # get top n features
-                top_features = df['feature'].tolist()[:top_n]
+                top_features = df["feature"].tolist()[:top_n]
 
                 # get embeddings for top n features
-                top_features_embedding = np.mean(self.get_embeddings(top_features), axis=0)
+                top_features_embedding = np.mean(
+                    self.get_embeddings(top_features), axis=0
+                )
 
-                results.append({'features': top_features, 'embedding': top_features_embedding})
-
+                results.append(
+                    {"features": top_features, "embedding": top_features_embedding}
+                )
 
         except ValueError as e:
             logger.error(
@@ -303,42 +323,39 @@ class ClusterTopics:
 
         return None
 
-
-
     def get_text_label_mapping(self, top_n: int = 5) -> dict:
-
         """Finds the closest n-gram to a clusters centroid.
         Returns a dict to be used to map these to labels."""
 
         labels, results = self.top_ngram_embeddings(top_n=top_n)
 
-        text_labels = [", ".join(r['features']) for r in results]
-        text_label_embeddings = np.asarray([r['embedding'] for r in results])
-
+        text_labels = [", ".join(r["features"]) for r in results]
+        text_label_embeddings = np.asarray([r["embedding"] for r in results])
 
         # If a list of categories is given, use those
         if isinstance(self.cluster_categories, list):
             # Make sure we have a unique list of categories
             categories = list(set(self.cluster_categories))
-            
+
             category_embeddings = self.get_embeddings(categories)
             neigh = NearestNeighbors(n_neighbors=1)
             neigh.fit(category_embeddings)
 
             # Update text_labels with closest category
             for i, label in enumerate(labels):
-                top_text_idx = neigh.kneighbors(np.array([text_label_embeddings[i]]))[1].flatten()
+                top_text_idx = neigh.kneighbors(np.array([text_label_embeddings[i]]))[
+                    1
+                ].flatten()
                 text_labels[i] = categories[top_text_idx[0]]
-
 
         mapping = {-1: "<outliers>"}
 
         for i, label in enumerate(labels):
-            mapping[label] = text_labels[i] if i < len(text_labels) else "<no label found>"
+            mapping[label] = (
+                text_labels[i] if i < len(text_labels) else "<no label found>"
+            )
 
         return mapping
-    
-
 
     def get_llm_description(self, text_label: str) -> str:
         """Gets the description of a cluster using LLM"""
@@ -346,36 +363,40 @@ class ClusterTopics:
         # Get prompt
         prompt = PROMPT_TEMPLATE_CLUSTER.format(samples=text_label)
 
-
-        explanation = get_openai_response_chat(prompt, 
-                                               model = settings.CLUSTER_DESCRIPTION_MODEL,
-                                               system_message="You are an expert at understanding the intent of Google searches.")
-        
+        explanation = get_openai_response_chat(
+            prompt,
+            model=settings.CLUSTER_DESCRIPTION_MODEL,
+            system_message="You are an expert at understanding the intent of Google searches.",
+        )
 
         return explanation
-
 
     def get_text_label_mapping_llm(self, top_n: int = 5) -> dict:
         """Gets explanations for each cluster using Palm or OpenAI LLM"""
 
-        mapping = self.get_text_label_mapping(top_n = top_n)
-        
+        mapping = self.get_text_label_mapping(top_n=top_n)
+
         # Use multi-threading to get explanations and add to mapping at correct label key
-        with concurrent.futures.ThreadPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=settings.MAX_WORKERS
+        ) as executor:
+            futures = {
+                executor.submit(self.get_llm_description, text_label): label
+                for label, text_label in mapping.items()
+            }
 
-            futures = {executor.submit(self.get_llm_description, text_label): label for label, text_label in mapping.items()}
-
-            for future in tqdm(concurrent.futures.as_completed(futures), desc="Getting LLM explanations", total=len(futures)):
+            for future in tqdm(
+                concurrent.futures.as_completed(futures),
+                desc="Getting LLM explanations",
+                total=len(futures),
+            ):
                 label = futures[future]
                 explanation = future.result()
                 mapping[label] = explanation
 
-
         return mapping
 
-
     def cluster_centroid_deduction(self) -> np.ndarray:
-
         """Finds the centroids, or central point in space,
         for each cluster of texts."""
 
@@ -391,7 +412,6 @@ class ClusterTopics:
         return labels, np.array(centroids)
 
     def fish_additional_outliers(self) -> None:
-
         """Finds additional labels in the outliers getting the closest centroid
         and only returning ones with a good sillouhette score"""
 
@@ -416,7 +436,6 @@ class ClusterTopics:
         return None
 
     def recluster_outliers(self) -> None:
-
         """This uses agglomerative clustering to recluster any remaining
         outliers.  One negative is that agglomerative doesn't produce
         outliers and some tokes (e.g. mispellings) SHOULD be outliers."""
@@ -428,9 +447,7 @@ class ClusterTopics:
         labels_idx = np.array([l + n for l in labels_idx])
         self.labels[outliers_idx] = labels_idx
 
-
     def fit(self, corpus: List[str], top_n: int = 5) -> tuple:
-
         """This is the main fitting function that does all the work."""
 
         self.corpus = np.array(corpus)
