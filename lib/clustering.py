@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 from loguru import logger
-from lib.api import get_openai_embeddings, get_palm_embeddings
+from lib.api import get_openai_embeddings
 from lib.prompts import PROMPT_TEMPLATE_CLUSTER
 from lib.api import get_openai_response_chat
 from lib.ctfidf import ClassTfidfTransformer
@@ -372,7 +372,7 @@ class ClusterTopics:
         return explanation
 
     def get_text_label_mapping_llm(self, top_n: int = 5) -> dict:
-        """Gets explanations for each cluster using Palm or OpenAI LLM"""
+        """Gets explanations for each cluster using OpenAI LLM"""
 
         mapping = self.get_text_label_mapping(top_n=top_n)
 
