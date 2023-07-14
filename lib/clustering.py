@@ -447,13 +447,50 @@ class ClusterTopics:
         labels_idx = np.array([l + n for l in labels_idx])
         self.labels[outliers_idx] = labels_idx
 
-    def fit(self, corpus: List[str], top_n: int = 5) -> tuple:
+    def fit_pairwise(
+        self, corpus: List[str], categories: Union[List[str], None]
+    ) -> tuple:
         """This is the main fitting function that does all the work.
-        
+
         Args:
             corpus (List[str]): A list of sentences to cluster.
             top_n (int, optional): The number of ngrams to use for cluster labels. Defaults to 5.
-        
+
+        Returns:
+            tuple: A tuple of the cluster labels and text labels."""
+
+        self.corpus = np.array(corpus)
+
+        logger.info("Getting embeddings.")
+        if self.embeddings is None:
+            self.embeddings = self.get_embeddings(self.corpus)
+
+        if categories:
+            self.cluster_categories = categories
+
+        if not self.cluster_categories:
+            raise ValueError(
+                "You must provide a list of cluster categories upon class intitiation to use this method."
+            )
+
+        category_embeddings = self.get_embeddings(self.cluster_categories)
+
+        logger.info("Getting pairwise cosine similarity.")
+        cosine_similarities = cosine_similarity(self.embeddings, category_embeddings)
+
+        self.labels = np.argmax(cosine_similarities, axis=1)
+
+        self.text_labels = [self.cluster_categories[l] for l in self.labels]
+
+        return (self.labels, self.text_labels)
+
+    def fit(self, corpus: List[str], top_n: int = 5) -> tuple:
+        """This is the main fitting function that does all the work.
+
+        Args:
+            corpus (List[str]): A list of sentences to cluster.
+            top_n (int, optional): The number of ngrams to use for cluster labels. Defaults to 5.
+
         Returns:
             tuple: A tuple of the cluster labels and text labels."""
 

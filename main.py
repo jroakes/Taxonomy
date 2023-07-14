@@ -175,9 +175,7 @@ def create_taxonomy(
     website_subject: str = "",
     text_column: str = None,
     search_volume_column: str = None,
-    cluster_embeddings_model: Union[
-        str, None
-    ] = "local",  # "openai" or "local"
+    cluster_embeddings_model: Union[str, None] = "local",  # "openai" or "local"
     min_cluster_size: int = 10,
     min_samples: int = 3,
     days: int = 30,
@@ -264,17 +262,41 @@ def create_taxonomy(
 
     df = df_original if len(df_original) > 0 else df
 
-    df = add_categories_clustered(
+    df = add_categories(
         structure,
         df,
         cluster_embeddings_model=cluster_embeddings_model,
-        min_cluster_size=min_cluster_size,
-        min_samples=min_samples,
     )
 
     logger.info("Done.")
 
     return structure, df, query_data
+
+
+def add_categories(
+    structure: List[str],
+    df: pd.DataFrame,
+    cluster_embeddings_model: Union[str, None] = None,
+    match_col: str = "query",
+) -> pd.DataFrame:
+    """Add categories to dataframe."""
+    texts = df[match_col].tolist()
+    structure_parts = [" ".join(s.split(" > ")[-2:]) for s in structure]
+    structure_map = {p: s for p, s in zip(structure_parts, structure)}
+
+    model = ClusterTopics(
+        embedding_model=cluster_embeddings_model,
+        cluster_categories=structure_parts,
+    )
+
+    labels, text_labels = model.fit_pairwise(texts)
+
+    label_lookup = {
+        text: structure_map[label] for text, label in zip(texts, text_labels)
+    }
+    df["taxonomy"] = df[match_col].map(label_lookup)
+
+    return df
 
 
 def add_categories_clustered(
