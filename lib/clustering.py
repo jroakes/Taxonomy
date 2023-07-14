@@ -448,7 +448,7 @@ class ClusterTopics:
         self.labels[outliers_idx] = labels_idx
 
     def fit_pairwise(
-        self, corpus: List[str], categories: Union[List[str], None]
+        self, corpus: List[str], categories: Union[List[str], None] = None
     ) -> tuple:
         """This is the main fitting function that does all the work.
 
