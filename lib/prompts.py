@@ -45,9 +45,9 @@ Here are some guidelines for reviewing the taxonomy:
 * Make sure all category designations are accurate and appropriate.
 * Ensure that categories are not duplicated. For example, if there is a category called 'Nike > Shoes > NEO Vulc' and another category called 'Nike > Shoes > NEO Vulc > NEO Vulc', please remove the 'Nike > Shoes > NEO Vulc > NEO Vulc' category.
 * Review the category names for readability. Ensure that category names are concise yet descriptive.
+* Only respond with the updated taxonomy.
 
-
-Please keep the formatting of the original taxonomy. The taxonomy should be structured as follows:
+Keep the formatting of the original taxonomy. The taxonomy should be structured as follows:
 - Category
   - Subcategory
     - Sub-subcategory

@@ -281,8 +281,8 @@ def add_categories(
     texts = df[match_col].tolist()
     structure_parts = [" ".join(s.split(" > ")[-2:]) for s in structure]
     structure_map = {p: s for p, s in zip(structure_parts, structure)}
-    if "<outliers>" not in structure_map:
-        structure_map["<outliers>"] = "Miscellaneous"
+    if "<outlier>" not in structure_map:
+        structure_map["<outlier>"] = "Miscellaneous"
 
 
     model = ClusterTopics(

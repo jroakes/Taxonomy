@@ -480,14 +480,14 @@ class ClusterTopics:
             embeddings = self.get_embeddings(corpus_array)
 
         if categories:
-            cluster_categories = categories
+            self.cluster_categories = categories
 
-        if not cluster_categories:
+        if not self.cluster_categories:
             raise ValueError(
                 "You must provide a list of cluster categories upon class initiation to use this method."
             )
 
-        category_embeddings = self.get_embeddings(cluster_categories)
+        category_embeddings = self.get_embeddings(self.cluster_categories)
 
         embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
         category_embeddings = category_embeddings / np.linalg.norm(category_embeddings, axis=1, keepdims=True)
@@ -499,13 +499,18 @@ class ClusterTopics:
         cross_encoder = CrossEncoder(settings.CROSSENCODER_MODEL_NAME)
 
         top_n_categories = [
-            [cluster_categories[x] for x in np.argsort(cosine_similarity_matrix[i])[-top_n:][::-1]]
+            [self.cluster_categories[x] for x in np.argsort(cosine_similarity_matrix[i])[-top_n:][::-1]]
+            for i in range(len(corpus_array))
+        ]
+
+        cross_encoder_pairs = [
+            list(zip([corpus_array[i]] * len(top_n_categories[i]), top_n_categories[i]))
             for i in range(len(corpus_array))
         ]
 
         cross_encoder_similarity = [
-            cross_encoder.predict([corpus_array[i]] * len(top_n_categories[i]), top_n_categories[i])
-            for i in tqdm(range(len(corpus_array)), desc="Getting cross-encoder similarity")
+            cross_encoder.predict(pairs)
+            for pairs in tqdm(cross_encoder_pairs, desc="Getting cross-encoder similarity")
         ]
 
         unique_similarities = np.unique(np.array(cross_encoder_similarity).flatten())
@@ -519,7 +524,7 @@ class ClusterTopics:
                 text_labels.append('<outlier>')
             else:
                 labels.append(argmax_similarities)
-                text_labels.append(cluster_categories[argmax_similarities])
+                text_labels.append(self.cluster_categories[argmax_similarities])
 
         self.labels = labels
         self.text_labels = text_labels
