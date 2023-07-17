@@ -1,7 +1,6 @@
 """Main module for taxonomy creation."""
 
 from typing import Union, List
-from sentence_transformers import CrossEncoder
 from collections import OrderedDict
 import pandas as pd
 from lib.searchconsole import load_gsc_account_data, load_available_gsc_accounts
@@ -277,6 +276,7 @@ def add_categories(
     structure: List[str],
     df: pd.DataFrame,
     cluster_embeddings_model: Union[str, None] = None,
+    cross_encoded: bool = False,
     match_col: str = "query",
 ) -> pd.DataFrame:
     """Add categories to dataframe."""
@@ -289,7 +289,10 @@ def add_categories(
         cluster_categories=structure_parts,
     )
 
-    labels, text_labels = model.fit_pairwise(texts)
+    if cross_encoded:
+        _, text_labels = model.fit_pairwise_crossencoded(texts)
+    else:
+        _, text_labels = model.fit_pairwise(texts)
 
     label_lookup = {
         text: structure_map[label] for text, label in zip(texts, text_labels)
@@ -334,55 +337,3 @@ def add_categories_clustered(
     return df
 
 
-# Need to update this to use a new cross-encoder model with better embeddings
-def add_categories_cross_encoded(
-    structure: List[str], df: pd.DataFrame, match_col: str = "query"
-) -> pd.DataFrame:
-    """Add categories to dataframe."""
-
-    logger.info("Finding Categories")
-
-    queries = list(set(df[match_col].tolist()))
-
-    taxonomies = structure.copy()
-
-    # Use ordered dict to keep only unique terms of t.split(" > ") in taxonomies.
-    categories = [
-        " ".join(OrderedDict.fromkeys(t.split(" > ")).keys()) for t in taxonomies
-    ]
-
-    model = CrossEncoder(settings.CROSSENCODER_MODEL_NAME, max_length=256)
-
-    compare_pairs = create_tuples(categories, queries)
-
-    logger.info(f"Comparing {len(compare_pairs)} items with cross-encoding.")
-
-    scores = model.predict(compare_pairs, batch_size=128)
-
-    df_category = pd.DataFrame(
-        {
-            "scores": scores,
-            "categories": [s[0] for s in compare_pairs],
-            "queries": [s[1] for s in compare_pairs],
-        }
-    )
-
-    df_category.sort_values(by="scores", ascending=False, inplace=True)
-
-    # This assigns the most similar category to each query
-    df_category = df_category.groupby(["queries"], as_index=False).agg(
-        {"categories": "first", "scores": "first"}
-    )
-
-    df_category.columns = [match_col, "taxonomy_category", "similiary_score"]
-
-    df_category["taxonomy"] = df_category["taxonomy_category"].map(
-        lambda x: taxonomies[categories.index(x)]
-    )
-
-    # drop taxonomy_category
-    df_category.drop(columns=["taxonomy_category"], inplace=True)
-
-    df_out = df.merge(df_category, on=match_col, how="left")
-
-    return df_out

@@ -9,11 +9,12 @@ from tqdm import tqdm
 from typing import List, Union
 import concurrent.futures
 from sentence_transformers import SentenceTransformer
+from sentence_transformers import CrossEncoder
 import torch
 
 from sklearn.metrics import silhouette_samples
 from sklearn.neighbors import NearestNeighbors
-from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from kneed import KneeLocator
 import warnings
@@ -96,8 +97,10 @@ class ClusterTopics:
             return get_openai_embeddings(sentences, n_jobs=self.n_jobs)
 
         else:
-            self.embedding_model = settings.LOCAL_EMBEDDING_MODEL
             logger.info("Using local embeddings")
+
+            if self.embedding_model == "e5":
+                self.embedding_model = "intfloat/e5-base-v2"
 
             # Only do batching and progress if many embeddings
 
@@ -447,6 +450,61 @@ class ClusterTopics:
         labels_idx = np.array([l + n for l in labels_idx])
         self.labels[outliers_idx] = labels_idx
 
+    
+    def fit_pairwise_crossencoded(self,corpus: List[str], categories: Union[List[str], None] = None, top_n: int = 5) -> tuple:
+        """Fits the model first pairwise using cosine_similarity and then using cross-encoder to top n categories"""
+
+        self.corpus = np.array(corpus)
+
+        logger.info("Getting embeddings.")
+        if self.embeddings is None:
+            self.embeddings = self.get_embeddings(self.corpus)
+
+        if categories:
+            self.cluster_categories = categories
+
+        if not self.cluster_categories:
+            raise ValueError(
+                "You must provide a list of cluster categories upon class intitiation to use this method."
+            )
+
+        category_embeddings = self.get_embeddings(self.cluster_categories)
+
+        # Normalize embeddings for cosine similarity
+        self.embeddings = self.embeddings / np.linalg.norm(
+            self.embeddings, axis=1, keepdims=True
+        )
+        category_embeddings = category_embeddings / np.linalg.norm(
+            category_embeddings, axis=1, keepdims=True
+        )
+
+        logger.info("Getting pairwise cosine similarity.")
+        cosine_similarity_matrix = cosine_similarity(self.embeddings, category_embeddings)
+
+        # Now use cross-encoder to get top n categories
+        logger.info("Getting cross-encoder similarity.")
+        cross_encoder = CrossEncoder(settings.CROSSENCODER_MODEL_NAME)
+
+        # Get top n categories
+        top_n_categories = []
+        for i in range(len(self.corpus)):
+            top_n_categories.append([self.cluster_categories[x] for x in np.argsort(cosine_similarity_matrix[i])[-top_n:][::-1]])
+        
+        # Get cross-encoder similarity
+        cross_encoder_similarity = []
+        for i in tqdm(range(len(self.corpus)), desc="Getting cross-encoder similarity"):
+            cross_encoder_similarity.append(cross_encoder.predict([self.corpus[i]]*top_n_categories[i], top_n_categories[i]))
+
+        # Get top category
+        self.labels = np.argmax(cross_encoder_similarity, axis=1)
+
+        self.text_labels = [self.cluster_categories[l] for l in self.labels]
+
+        return (self.labels, self.text_labels)
+
+
+
+
     def fit_pairwise(
         self, corpus: List[str], categories: Union[List[str], None] = None
     ) -> tuple:
@@ -475,10 +533,18 @@ class ClusterTopics:
 
         category_embeddings = self.get_embeddings(self.cluster_categories)
 
-        logger.info("Getting pairwise cosine similarity.")
-        cosine_similarities = cosine_similarity(self.embeddings, category_embeddings)
+        # Normalize embeddings for cosine similarity
+        self.embeddings = self.embeddings / np.linalg.norm(
+            self.embeddings, axis=1, keepdims=True
+        )
+        category_embeddings = category_embeddings / np.linalg.norm(
+            category_embeddings, axis=1, keepdims=True
+        )
 
-        self.labels = np.argmax(cosine_similarities, axis=1)
+        logger.info("Getting pairwise cosine similarity.")
+        cosine_similarity_matrix = cosine_similarity(self.embeddings, category_embeddings)
+
+        self.labels = np.argmax(cosine_similarity_matrix, axis=1)
 
         self.text_labels = [self.cluster_categories[l] for l in self.labels]
 

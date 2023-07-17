@@ -3,16 +3,12 @@
 from typing import List, Union
 import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer
-from sentence_transformers import CrossEncoder
 from tqdm import tqdm
 from nltk.util import ngrams
 from kneed import KneeLocator
 from loguru import logger
 
 import settings
-
-
-model = CrossEncoder(settings.CROSSENCODER_MODEL_NAME, max_length=128)
 
 
 def get_structure(text: str) -> List[str]:

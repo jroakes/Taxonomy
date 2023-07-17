@@ -13,7 +13,7 @@ load_dotenv()
 MAX_WORKERS = 1
 
 # NLP
-CROSSENCODER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+CROSSENCODER_MODEL_NAME = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 PALM_EMBEDDING_MODEL = "models/embedding-gecko-001"
 OPENAI_EMBEDDING_MODEL = "text-embedding-ada-002"
 LOCAL_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
