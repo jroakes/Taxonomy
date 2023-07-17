@@ -450,9 +450,22 @@ class ClusterTopics:
         labels_idx = np.array([l + n for l in labels_idx])
         self.labels[outliers_idx] = labels_idx
 
-    
-    def fit_pairwise_crossencoded(self,corpus: List[str], categories: Union[List[str], None] = None, top_n: int = 5) -> tuple:
-        """Fits the model first pairwise using cosine_similarity and then using cross-encoder to top n categories"""
+    def fit_pairwise_crossencoded(
+        self,
+        corpus: List[str],
+        categories: Union[List[str], None] = None,
+        top_n: int = 5,
+    ) -> tuple:
+        """Fits the model first pairwise using cosine_similarity and then using cross-encoder to top n categories
+        
+        Args:
+            corpus (List[str]): A list of sentences to cluster.
+            categories (Union[List[str], None], optional): A list of categories to use for clustering. Defaults to None.
+            top_n (int, optional): The number of categories to cross-encode. Defaults to 5.
+            
+        Returns:
+            tuple: A tuple of the cluster labels and text labels.
+        """
 
         self.corpus = np.array(corpus)
 
@@ -479,7 +492,9 @@ class ClusterTopics:
         )
 
         logger.info("Getting pairwise cosine similarity.")
-        cosine_similarity_matrix = cosine_similarity(self.embeddings, category_embeddings)
+        cosine_similarity_matrix = cosine_similarity(
+            self.embeddings, category_embeddings
+        )
 
         # Now use cross-encoder to get top n categories
         logger.info("Getting cross-encoder similarity.")
@@ -488,12 +503,21 @@ class ClusterTopics:
         # Get top n categories
         top_n_categories = []
         for i in range(len(self.corpus)):
-            top_n_categories.append([self.cluster_categories[x] for x in np.argsort(cosine_similarity_matrix[i])[-top_n:][::-1]])
-        
+            top_n_categories.append(
+                [
+                    self.cluster_categories[x]
+                    for x in np.argsort(cosine_similarity_matrix[i])[-top_n:][::-1]
+                ]
+            )
+
         # Get cross-encoder similarity
         cross_encoder_similarity = []
         for i in tqdm(range(len(self.corpus)), desc="Getting cross-encoder similarity"):
-            cross_encoder_similarity.append(cross_encoder.predict([self.corpus[i]]*top_n_categories[i], top_n_categories[i]))
+            cross_encoder_similarity.append(
+                cross_encoder.predict(
+                    [self.corpus[i]] * top_n_categories[i], top_n_categories[i]
+                )
+            )
 
         # Get top category
         self.labels = np.argmax(cross_encoder_similarity, axis=1)
@@ -501,9 +525,6 @@ class ClusterTopics:
         self.text_labels = [self.cluster_categories[l] for l in self.labels]
 
         return (self.labels, self.text_labels)
-
-
-
 
     def fit_pairwise(
         self, corpus: List[str], categories: Union[List[str], None] = None
@@ -542,7 +563,9 @@ class ClusterTopics:
         )
 
         logger.info("Getting pairwise cosine similarity.")
-        cosine_similarity_matrix = cosine_similarity(self.embeddings, category_embeddings)
+        cosine_similarity_matrix = cosine_similarity(
+            self.embeddings, category_embeddings
+        )
 
         self.labels = np.argmax(cosine_similarity_matrix, axis=1)
 

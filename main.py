@@ -100,9 +100,7 @@ def get_data(
 
 
 def score_and_filter_df(
-    df: pd.DataFrame,
-    ngram_range: tuple = (1, 6),
-    min_df: int = 2,
+    df: pd.DataFrame, ngram_range: tuple = (1, 6), min_df: int = 2,
 ) -> pd.DataFrame:
     """Score and filter dataframe."""
 
@@ -175,8 +173,7 @@ def create_taxonomy(
     text_column: str = None,
     search_volume_column: str = None,
     cluster_embeddings_model: Union[str, None] = "local",  # "openai" or "local"
-    min_cluster_size: int = 10,
-    min_samples: int = 3,
+    cross_encoded: bool = False,
     days: int = 30,
     ngram_range: tuple = (1, 5),
     min_df: int = 5,
@@ -188,11 +185,11 @@ def create_taxonomy(
 
     Args:
         data (Union[str, pd.DataFrame]): GSC Property, CSV Filename, or pandas dataframe.
+        website_subject (str, optional): Subject of the website. Defaults to "".
         text_column (str, optional): Name of the column with the queries. Defaults to None.
         search_volume_column (str, optional): Name of the column with the search volume. Defaults to None.
         cluster_embeddings_model (Union[str, None], optional): Name of the cluster embeddings model. Defaults to "local".
-        min_cluster_size (int, optional): Minimum cluster size to use for clustering. Defaults to 5.
-        min_samples (int, optional): Minimum samples to use for clustering. Defaults to 2.
+        cross_encoded (bool, optional): Whether to use cross encoded clustering. Defaults to False.
         days (int, optional): Number of days to get data from. Defaults to 30.
         ngram_range (tuple, optional): Ngram range to use for scoring. Defaults to (1, 6).
         min_df (int, optional): Minimum document frequency to use for scoring. Defaults to 2.
@@ -265,6 +262,7 @@ def create_taxonomy(
         structure,
         df,
         cluster_embeddings_model=cluster_embeddings_model,
+        cross_encoded=cross_encoded,
     )
 
     logger.info("Done.")
@@ -285,8 +283,7 @@ def add_categories(
     structure_map = {p: s for p, s in zip(structure_parts, structure)}
 
     model = ClusterTopics(
-        embedding_model=cluster_embeddings_model,
-        cluster_categories=structure_parts,
+        embedding_model=cluster_embeddings_model, cluster_categories=structure_parts,
     )
 
     if cross_encoded:
@@ -335,5 +332,3 @@ def add_categories_clustered(
     df["taxonomy"] = df[match_col].map(label_lookup)
 
     return df
-
-
