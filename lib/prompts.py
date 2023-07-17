@@ -8,7 +8,7 @@ Important Topics:
 
 The topics are a list of topic ngrams and their scores. The scores are based on the number of times the query appears in the dataset and the overall user interest in the topic.  Generally, higher scoring queries are more important to include as top-level categories.
 
-Please adhere to the following format for your output:
+Please adhere to the following dash-prefix format for your output:
 
 - Category
   - Subcategory
