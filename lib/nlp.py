@@ -251,6 +251,9 @@ def clean_provided_dataframe(
     else:
         df = df[["query", "search_volume"]].copy()
 
+    # Ensure query is a string
+    df["query"] = df["query"].astype(str)
+    
     df["original_query"] = df["query"].copy()
 
     if brand_terms:
