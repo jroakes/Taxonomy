@@ -460,7 +460,7 @@ class ClusterTopics:
         corpus: List[str],
         categories: Union[List[str], None] = None,
         top_n: int = 5,
-        similarity_percentile: int = 20,
+        similarity_percentile: int = 40,
     ) -> tuple:
         """Fits the model first pairwise using cosine_similarity and then using cross-encoder to top n categories
         
@@ -517,14 +517,14 @@ class ClusterTopics:
         similarity_threshold = np.percentile(unique_similarities, similarity_percentile)
 
         labels, text_labels = [], []
-        for similarities in cross_encoder_similarity:
+        for i, similarities in enumerate(cross_encoder_similarity):
             argmax_similarities = np.argmax(similarities)
             if max(similarities) < similarity_threshold:
                 labels.append(-1)
                 text_labels.append('<outlier>')
             else:
                 labels.append(argmax_similarities)
-                text_labels.append(self.cluster_categories[argmax_similarities])
+                text_labels.append(top_n_categories[i][argmax_similarities])
 
         self.labels = labels
         self.text_labels = text_labels
