@@ -141,7 +141,6 @@ def score_and_filter_df(
 
     if len(df_ngram) <= settings.MAX_SAMPLES:
         logger.info(f"Final score and filter length: {len(df_ngram)}")
-        print(df_ngram.head())
         return df_ngram
 
     df_knee = None
@@ -180,6 +179,7 @@ def create_taxonomy(
     brand_terms: List[str] = None,
     limit_queries_per_page: int = 5,
     debug_responses: bool = False,
+    **kwargs,
 ):
     """Kickoff function to create taxonomy from GSC data.
 
@@ -263,6 +263,7 @@ def create_taxonomy(
         df,
         cluster_embeddings_model=cluster_embeddings_model,
         cross_encoded=cross_encoded,
+        **kwargs
     )
 
     logger.info("Done.")
@@ -276,6 +277,7 @@ def add_categories(
     cluster_embeddings_model: Union[str, None] = None,
     cross_encoded: bool = False,
     match_col: str = "query",
+    **kwargs,
 ) -> pd.DataFrame:
     """Add categories to dataframe."""
     texts = df[match_col].tolist()
@@ -290,7 +292,7 @@ def add_categories(
     )
 
     if cross_encoded:
-        _, text_labels = model.fit_pairwise_crossencoded(texts)
+        _, text_labels = model.fit_pairwise_crossencoded(texts, **kwargs)
     else:
         _, text_labels = model.fit_pairwise(texts)
 

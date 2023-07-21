@@ -460,7 +460,8 @@ class ClusterTopics:
         corpus: List[str],
         categories: Union[List[str], None] = None,
         top_n: int = 5,
-        similarity_percentile: int = 40,
+        percentile_threshold: int = 50,
+        std_dev_threshold: float = 0.1,
     ) -> tuple:
         """Fits the model first pairwise using cosine_similarity and then using cross-encoder to top n categories
         
@@ -473,7 +474,7 @@ class ClusterTopics:
             tuple: A tuple of the cluster labels and text labels.
         """
 
-        corpus_array = np.array(corpus)
+        corpus_array = np.array(list(set(corpus)))
 
         logger.info("Getting embeddings.")
         if self.embeddings is None:
@@ -509,25 +510,55 @@ class ClusterTopics:
         ]
 
         cross_encoder_similarity = [
-            cross_encoder.predict(pairs)
+            cross_encoder.predict(pairs).flatten()
             for pairs in tqdm(cross_encoder_pairs, desc="Getting cross-encoder similarity")
         ]
 
-        unique_similarities = np.unique(np.array(cross_encoder_similarity).flatten())
-        similarity_threshold = np.percentile(unique_similarities, similarity_percentile)
+        similarities_flattened = np.array(cross_encoder_similarity).flatten()
+        similarity_threshold = np.percentile(similarities_flattened, percentile_threshold)
+
+        logger.info(f"Similarity threshold: {similarity_threshold}")
 
         labels, text_labels = [], []
         for i, similarities in enumerate(cross_encoder_similarity):
-            argmax_similarities = np.argmax(similarities)
-            if max(similarities) < similarity_threshold:
+            #logger.info(f"Query: {corpus_array[i]}")
+            #for j, sim in enumerate(similarities):
+            #    logger.info(f"{top_n_categories[i][j]}: {sim}")
+            
+            most_similar = np.argmax(similarities)
+            most_similar_score = similarities[most_similar]
+            std_dev = np.std(similarities)
+
+            #logger.info(f"Most similar: {top_n_categories[i][most_similar]}")
+            #logger.info(f"Most similar score: {most_similar_score}")
+            #logger.info(f"Std dev: {std_dev}")
+
+
+            if most_similar_score >= similarity_threshold and std_dev >= std_dev_threshold:
+                # Good result since there is a score that is in the top percentile and the std dev is higher than the threshold
+                best_category = top_n_categories[i][most_similar]
+                labels.append(self.cluster_categories.index(best_category))
+                #logger.info(f"Best category: {best_category}")
+                text_labels.append(best_category)            
+            else:
                 labels.append(-1)
                 text_labels.append('<outlier>')
-            else:
-                labels.append(argmax_similarities)
-                text_labels.append(top_n_categories[i][argmax_similarities])
+                #logger.info("Outlier")
 
-        self.labels = labels
-        self.text_labels = text_labels
+            #logger.info("")
+
+        
+        labels_match = []
+        text_labels_match = []
+
+        # Match back to full length corpus
+        for i, item in enumerate(corpus):
+            idx = np.where(corpus_array == item)[0][0]
+            labels_match.append(labels[idx])
+            text_labels_match.append(text_labels[idx])
+
+        self.labels = labels_match
+        self.text_labels = text_labels_match
 
         return (self.labels, self.text_labels)
 
@@ -579,6 +610,8 @@ class ClusterTopics:
         self.text_labels = [self.cluster_categories[l] for l in self.labels]
 
         return (self.labels, self.text_labels)
+    
+
 
     def fit(self, corpus: List[str], top_n: int = 5) -> tuple:
         """This is the main fitting function that does all the work.
