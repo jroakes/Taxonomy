@@ -469,6 +469,8 @@ class ClusterTopics:
             corpus (List[str]): A list of sentences to cluster.
             categories (Union[List[str], None], optional): A list of categories to use for clustering. Defaults to None.
             top_n (int, optional): The number of categories to cross-encode. Defaults to 5.
+            percentile_threshold (int, optional): The percentile threshold to use for cross-encoder. Defaults to 50.
+            std_dev_threshold (float, optional): The standard deviation threshold to use for cross-encoder. Defaults to 0.1.
             
         Returns:
             tuple: A tuple of the cluster labels and text labels.

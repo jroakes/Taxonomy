@@ -41,9 +41,7 @@ class OpenAIError(APIError):
     wait=wait_random_exponential(min=5, max=60),
     stop=stop_after_attempt(settings.API_RETRY_ATTEMPTS),
 )
-def get_openai_response(
-    messages: List[dict], model: str = "gpt-3.5-turbo"
-) -> Union[str, None]:
+def get_openai_response(messages: List[dict], model: str = "gpt-4") -> Union[str, None]:
     """Get a response from OpenAI's API."""
 
     try:
@@ -51,8 +49,7 @@ def get_openai_response(
             model=model,
             messages=messages,
             request_timeout=settings.OPENAI_REQUEST_TIMEOUT,
-            max_tokens=6000 if "-16k" in model else 2000,
-            frequency_penalty=0.2,
+            max_tokens=4000,
             temperature=0.0,
             n=1,
         )

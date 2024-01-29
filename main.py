@@ -15,6 +15,7 @@ from lib.nlp import (
 from lib.api import get_openai_response_chat, APIError
 from lib.prompts import PROMPT_TEMPLATE_TAXONOMY, PROMPT_TEMPLATE_TAXONOMY_REVIEW
 from lib.utils import create_tuples
+from tqdm import tqdm
 from lib.clustering import ClusterTopics
 from loguru import logger
 import settings
@@ -100,7 +101,7 @@ def get_data(
 
 
 def score_and_filter_df(
-    df: pd.DataFrame, ngram_range: tuple = (1, 6), min_df: int = 2,
+    df: pd.DataFrame, ngram_range: tuple = (1, 6), min_df: int = 2, min_length: Union[int, None] = None
 ) -> pd.DataFrame:
     """Score and filter dataframe."""
 
@@ -143,13 +144,24 @@ def score_and_filter_df(
         logger.info(f"Final score and filter length: {len(df_ngram)}")
         return df_ngram
 
-    df_knee = None
+    df_knee = df_ngram.copy()
     S = settings.MAX_SAMPLES
 
     # Filter by knee
-    while df_knee is None or len(df_knee) > settings.MAX_SAMPLES:
+    pbar = tqdm(total=int(settings.MAX_SAMPLES / 20) + 1, desc="Filtering by knee")
+    while S > 0 and len(df_knee) > settings.MAX_SAMPLES:
+        pbar.update(1)
         df_knee = filter_knee(df_ngram.copy(), col_name="score", S=S)
-        S -= 25
+        S -= 20
+
+    pbar.close()
+
+    if len(df_knee) > settings.MAX_SAMPLES:
+        logger.warning("Warning: Could not filter by knee. Using top 1000.")
+        df_knee = df_knee.head(settings.MAX_SAMPLES)
+
+    if min_length and len(df_knee) < min_length:
+        df_knee = df_ngram.head(min_length).copy()
 
     logger.info(
         f"Filtered Knee (sensitivity={int(S+25)}). Dataframe shape: {df_knee.shape}"
@@ -281,7 +293,7 @@ def add_categories(
 ) -> pd.DataFrame:
     """Add categories to dataframe."""
     texts = df[match_col].tolist()
-    structure_parts = [" ".join(s.split(" > ")[-2:]) for s in structure]
+    structure_parts = [" ".join(s.split(" > ")) for s in structure]
     structure_map = {p: s for p, s in zip(structure_parts, structure)}
     if "<outlier>" not in structure_map:
         structure_map["<outlier>"] = "Miscellaneous"
@@ -314,7 +326,7 @@ def add_categories_clustered(
 ) -> pd.DataFrame:
     """Add categories to dataframe."""
     texts = df[match_col].tolist()
-    structure_parts = [" ".join(s.split(" > ")[-1:]) for s in structure]
+    structure_parts = [" ".join(s.split(" > ")) for s in structure]
     structure_map = {p: s for p, s in zip(structure_parts, structure)}
     if "<outliers>" not in structure_map:
         structure_map["<outliers>"] = "Miscellaneous"
@@ -326,8 +338,7 @@ def add_categories_clustered(
         reduction_dims=2,
         cluster_model="hdbscan",
         cluster_categories=structure_parts,
-        keep_outliers=True,
-        n_jobs=3,
+        keep_outliers=True
     )
 
     labels, text_labels = model.fit(texts)
